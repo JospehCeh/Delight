@@ -101,7 +101,7 @@ def delightApply_HyperParam(configfilename, hyperParam_name="", hyperParam_list=
         
     if sensitivity and hyperParam_name != "ellSigmaPrior":
         margLike_list=[]
-        abscissa_list=[]
+        abscissaML_list=[]
         for chunk in range(numChunks):
             TR_firstLine = int(chunk * numObjectsTraining / float(numChunks))
             TR_lastLine = int(min(numObjectsTraining, (chunk + 1) * numObjectsTarget / float(numChunks)))
@@ -116,7 +116,15 @@ def delightApply_HyperParam(configfilename, hyperParam_name="", hyperParam_list=
             # loop on training data and training GP coefficients produced by delight_learn
             # It fills the model_mean and model_covar predicted by GP
 
+            print("Study of the influence of {} on likelihood and evidences".format(hyperParam_name))
+            nbCol = 2
+            nbLin = (len(hyperParam_list)+1) // 2
+            fig1, axs1 = plt.subplots(nbLin, nbCol, figsize=(nbCol*6, nbLin*5), constrained_layout=True)
+            ligne, colonne = 0, 0
+            
             for hyperParam in hyperParam_list:
+                allEv=[]
+                allTargetZ=[]
                 loc = TR_firstLine - 1
                 trainingDataIter = getDataFromFile(params, TR_firstLine, TR_lastLine,prefix="training_", ftype="gpparams")
                 if hyperParam_name == "V_C":
@@ -167,7 +175,7 @@ def delightApply_HyperParam(configfilename, hyperParam_name="", hyperParam_list=
 
                     ### CALCUL MARGINAL LIKELIHODD OU AUTRE METRIQUE ###
                     margLike_list.append(gp.margLike())
-                    abscissa_list.append(hyperParam)
+                    abscissaML_list.append(hyperParam)
 
                 #Redshift prior on training galaxy
                 # p_t = params['p_t'][bestTypes][None, :]
@@ -213,11 +221,14 @@ def delightApply_HyperParam(configfilename, hyperParam_name="", hyperParam_list=
                             ell_var=(ell_hat_z*params['ellPriorSigma'])**2)
                         like_grid *= prior[:, :] #likelihood multiplied by redshift training galaxies priors
                     t2 = time()
-                    localPDFs[loc, :] += like_grid.sum(axis=1)  # the final redshift posterior is sum over training galaxies posteriors
+                    localPDFs[loc, :] += like_grid.sum(axis=1)  # the final redshift posterior is sum over target galaxies posteriors
 
                     # compute the evidence for each model
                     evidences = np.trapz(like_grid, x=redshiftGrid, axis=0) ## EVIDENCE =? MARGINAL LIKELIHOOD
-                    print("Evidences shape : {}".format(evidences.shape))
+                    for ev in evidences:
+                        allEv.append(ev)
+                        allTargetZ.append(z)
+                    #print("Evidences shape : {}".format(evidences.shape))
                     t3 = time()
 
                     if params['useCompression'] and not params['compressionFilesFound']:
@@ -239,6 +250,27 @@ def delightApply_HyperParam(configfilename, hyperParam_name="", hyperParam_list=
                     t4 = time()
                     if loc % 100 == 0:
                         print(loc, t2-t1, t3-t2, t4-t3)
+
+                alpha = 0.9
+                s = 5
+                #astrohist(evidences, ax=axs, bins='blocks', label='ellSigmaPrior ='+' 1e{}'.format(np.log10(hyperParam)))
+                #print("{} target redshifts, {} evidences.".format(len(allTargetZ), len(allEv)))
+                #axs[ligne, colonne].hist2d(allTargetZ, allEv, bins=[100, 100],\
+                #                           density=True, cmap="Reds", alpha=alpha)#,\
+                                           #range=[[np.min(abscissa_list), np.max(abscissa_list)], [-10, 200]])
+                axs1[ligne, colonne].scatter(allTargetZ, allEv, label='ellSigmaPrior = {}'.format(hyperParam), alpha=alpha, s=s)
+                axs1[ligne, colonne].set_xlabel('target z')
+                axs1[ligne, colonne].set_ylabel('evidences')
+                axs1[ligne, colonne].set_yscale('log')
+                axs1[ligne, colonne].set_title('Evidences : likelihood integrated over spec-z')
+                axs1[ligne, colonne].set_title('ellSigmaPrior = {}'.format(hyperParam))
+                axs1[ligne, colonne].legend(loc="upper right")
+                if colonne < 1:
+                    colonne+=1
+                else:
+                    ligne+=1
+                    colonne=0
+                ### WHAT ARE THE DIMENSIONS OF THE OBJECTS (8 SEDs in template fitting, how many here?) ###
 
                 if params['useCompression'] and params['compressionFilesFound']:
                     fC.close()
