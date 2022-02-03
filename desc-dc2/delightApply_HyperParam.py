@@ -169,8 +169,82 @@ def delightApply_HyperParam(configfilename, hyperParam_name="", hyperParam_list=
                     margLike_list.append(gp.margLike())
                     abscissa_list.append(hyperParam)
 
+                #Redshift prior on training galaxy
+                # p_t = params['p_t'][bestTypes][None, :]
+                # p_z_t = params['p_z_t'][bestTypes][None, :]
+                # compute the prior for taht training sample
+                prior = np.exp(-0.5*((redshiftGrid[:, None]-redshifts[None, :]) /params['zPriorSigma'])**2)
+                # prior[prior < 1e-6] = 0
+                # prior *= p_t * redshiftGrid[:, None] *
+                # np.exp(-0.5 * redshiftGrid[:, None]**2 / p_z_t) / p_z_t
+
+                if params['useCompression'] and params['compressionFilesFound']:
+                    fC = open(params['compressMargLikFile'])
+                    fCI = open(params['compressIndicesFile'])
+                    itCompM = itertools.islice(fC, firstLine, lastLine)
+                    iterCompI = itertools.islice(fCI, firstLine, lastLine)
+
+                targetDataIter = getDataFromFile(params, firstLine, lastLine,prefix="target_", getXY=False, CV=False)
+
+                # loop on target samples
+                for loc, (z, normedRefFlux, bands, fluxes, fluxesVar, bCV, dCV, dVCV) in enumerate(targetDataIter):
+                    t1 = time()
+                    ell_hat_z = normedRefFlux * 4 * np.pi * params['fluxLuminosityNorm'] * (DL(redshiftGrid)**2. * (1+redshiftGrid))
+                    ell_hat_z[:] = 1
+                    if params['useCompression'] and params['compressionFilesFound']:
+                        indices = np.array(next(iterCompI).split(' '), dtype=int)
+                        sel = np.in1d(targetIndices, indices, assume_unique=True)
+                        # same likelihood as for template fitting
+                        like_grid2 = approx_flux_likelihood(fluxes,fluxesVar,model_mean[:, sel, :][:, :, bands],
+                        f_mod_covar=model_covar[:, sel, :][:, :, bands],
+                        marginalizeEll=True, normalized=False,
+                        ell_hat=ell_hat_z,
+                        ell_var=(ell_hat_z*params['ellPriorSigma'])**2)
+                        like_grid *= prior[:, sel]
+                    else:
+                        like_grid = np.zeros((nz, model_mean.shape[1]))
+                        # same likelihood as for template fitting, but cython
+                        approx_flux_likelihood_cy(
+                            like_grid, nz, model_mean.shape[1], bands.size,
+                            fluxes, fluxesVar,  # target galaxy fluxes and variance
+                            model_mean[:, :, bands],     # prediction with Gaussian process
+                            model_covar[:, :, bands],
+                            ell_hat=ell_hat_z,           # it will find internally the ell
+                            ell_var=(ell_hat_z*params['ellPriorSigma'])**2)
+                        like_grid *= prior[:, :] #likelihood multiplied by redshift training galaxies priors
+                    t2 = time()
+                    localPDFs[loc, :] += like_grid.sum(axis=1)  # the final redshift posterior is sum over training galaxies posteriors
+
+                    # compute the evidence for each model
+                    evidences = np.trapz(like_grid, x=redshiftGrid, axis=0) ## EVIDENCE =? MARGINAL LIKELIHOOD
+                    print("Evidences shape : {}".format(evidences.shape))
+                    t3 = time()
+
+                    if params['useCompression'] and not params['compressionFilesFound']:
+                        if localCompressIndices[loc, :].sum() == 0:
+                            sortind = np.argsort(evidences)[::-1][0:Ncompress]
+                            localCompressIndices[loc, :] = targetIndices[sortind]
+                            localCompEvidences[loc, :] = evidences[sortind]
+                        else:
+                            dind = np.concatenate((targetIndices,localCompressIndices[loc, :]))
+                            devi = np.concatenate((evidences,localCompEvidences[loc, :]))
+                            sortind = np.argsort(devi)[::-1][0:Ncompress]
+                            localCompressIndices[loc, :] = dind[sortind]
+                            localCompEvidences[loc, :] = devi[sortind]
+
+                    if chunk == numChunks - 1\
+                            and redshiftsInTarget\
+                         and localPDFs[loc, :].sum() > 0:
+                        localMetrics[loc, :] = computeMetrics(z, redshiftGrid,localPDFs[loc, :],params['confidenceLevels'])
+                    t4 = time()
+                    if loc % 100 == 0:
+                        print(loc, t2-t1, t3-t2, t4-t3)
+
+                if params['useCompression'] and params['compressionFilesFound']:
+                    fC.close()
+                    fCI.close()
+
             ### PLOT METRIQUE ###
-            ## Plot for this iteration on ellPriorSigma:
             alpha = 0.9
             s = 5
             fig, ax = plt.subplots(constrained_layout=True)
@@ -184,81 +258,6 @@ def delightApply_HyperParam(configfilename, hyperParam_name="", hyperParam_list=
             ax.set_title('Training chunk No {}'.format(chunk))
             fig.suptitle('Effect of hyperparameter '+hyperParam_name+' on GP marginal likelihood during estimation process.')
             fig.show()
-            
-            #Redshift prior on training galaxy
-            # p_t = params['p_t'][bestTypes][None, :]
-            # p_z_t = params['p_z_t'][bestTypes][None, :]
-            # compute the prior for taht training sample
-            prior = np.exp(-0.5*((redshiftGrid[:, None]-redshifts[None, :]) /params['zPriorSigma'])**2)
-            # prior[prior < 1e-6] = 0
-            # prior *= p_t * redshiftGrid[:, None] *
-            # np.exp(-0.5 * redshiftGrid[:, None]**2 / p_z_t) / p_z_t
-
-            if params['useCompression'] and params['compressionFilesFound']:
-                fC = open(params['compressMargLikFile'])
-                fCI = open(params['compressIndicesFile'])
-                itCompM = itertools.islice(fC, firstLine, lastLine)
-                iterCompI = itertools.islice(fCI, firstLine, lastLine)
-
-            targetDataIter = getDataFromFile(params, firstLine, lastLine,prefix="target_", getXY=False, CV=False)
-
-            # loop on target samples
-            for loc, (z, normedRefFlux, bands, fluxes, fluxesVar, bCV, dCV, dVCV) in enumerate(targetDataIter):
-                t1 = time()
-                ell_hat_z = normedRefFlux * 4 * np.pi * params['fluxLuminosityNorm'] * (DL(redshiftGrid)**2. * (1+redshiftGrid))
-                ell_hat_z[:] = 1
-                if params['useCompression'] and params['compressionFilesFound']:
-                    indices = np.array(next(iterCompI).split(' '), dtype=int)
-                    sel = np.in1d(targetIndices, indices, assume_unique=True)
-                    # same likelihood as for template fitting
-                    like_grid2 = approx_flux_likelihood(fluxes,fluxesVar,model_mean[:, sel, :][:, :, bands],
-                    f_mod_covar=model_covar[:, sel, :][:, :, bands],
-                    marginalizeEll=True, normalized=False,
-                    ell_hat=ell_hat_z,
-                    ell_var=(ell_hat_z*params['ellPriorSigma'])**2)
-                    like_grid *= prior[:, sel]
-                else:
-                    like_grid = np.zeros((nz, model_mean.shape[1]))
-                    # same likelihood as for template fitting, but cython
-                    approx_flux_likelihood_cy(
-                        like_grid, nz, model_mean.shape[1], bands.size,
-                        fluxes, fluxesVar,  # target galaxy fluxes and variance
-                        model_mean[:, :, bands],     # prediction with Gaussian process
-                        model_covar[:, :, bands],
-                        ell_hat=ell_hat_z,           # it will find internally the ell
-                        ell_var=(ell_hat_z*params['ellPriorSigma'])**2)
-                    like_grid *= prior[:, :] #likelihood multiplied by redshift training galaxies priors
-                t2 = time()
-                localPDFs[loc, :] += like_grid.sum(axis=1)  # the final redshift posterior is sum over training galaxies posteriors
-
-                # compute the evidence for each model
-                evidences = np.trapz(like_grid, x=redshiftGrid, axis=0) ## EVIDENCE =? MARGINAL LIKELIHOOD
-                print("Evidences shape : {}".format(evidences.shape))
-                t3 = time()
-
-                if params['useCompression'] and not params['compressionFilesFound']:
-                    if localCompressIndices[loc, :].sum() == 0:
-                        sortind = np.argsort(evidences)[::-1][0:Ncompress]
-                        localCompressIndices[loc, :] = targetIndices[sortind]
-                        localCompEvidences[loc, :] = evidences[sortind]
-                    else:
-                        dind = np.concatenate((targetIndices,localCompressIndices[loc, :]))
-                        devi = np.concatenate((evidences,localCompEvidences[loc, :]))
-                        sortind = np.argsort(devi)[::-1][0:Ncompress]
-                        localCompressIndices[loc, :] = dind[sortind]
-                        localCompEvidences[loc, :] = devi[sortind]
-
-                if chunk == numChunks - 1\
-                        and redshiftsInTarget\
-                     and localPDFs[loc, :].sum() > 0:
-                    localMetrics[loc, :] = computeMetrics(z, redshiftGrid,localPDFs[loc, :],params['confidenceLevels'])
-                t4 = time()
-                if loc % 100 == 0:
-                    print(loc, t2-t1, t3-t2, t4-t3)
-
-            if params['useCompression'] and params['compressionFilesFound']:
-                fC.close()
-                fCI.close()
                 
     else:
         for chunk in range(numChunks):
@@ -317,7 +316,10 @@ def delightApply_HyperParam(configfilename, hyperParam_name="", hyperParam_list=
 
             if sensitivity and hyperParam_name == "ellSigmaPrior":
                 print("Study of the influence of {} on likelihood and evidences".format(hyperParam_name))
-                fig, axs = plt.subplots(constrained_layout=True)
+                nbCol = 2
+                nbLin = (len(hyperParam_list)+1) // 2
+                fig, axs = plt.subplots(nbLin, nbCol, figsize=(nbCol*6, nbLin*5), constrained_layout=True)
+                ligne, colonne = 0, 0
                 #fig2, axs2 = plt.subplots(constrained_layout=True)
                 
                 for hyperParam in hyperParam_list:
@@ -375,8 +377,6 @@ def delightApply_HyperParam(configfilename, hyperParam_name="", hyperParam_list=
                                 sortind = np.argsort(devi)[::-1][0:Ncompress]
                                 localCompressIndices[loc, :] = dind[sortind]
                                 localCompEvidences[loc, :] = devi[sortind]
-                                print(dind.shape, devi.shape)
-                            print(localCompressIndices.shape, localCompEvidences.shape)
 
                         if chunk == numChunks - 1\
                                 and redshiftsInTarget\
@@ -403,21 +403,33 @@ def delightApply_HyperParam(configfilename, hyperParam_name="", hyperParam_list=
                     # ~ axs2.set_title('SED {}'.format(sed_names[plotInd]))
                     # ~ #axs2.legend(loc="center right")
 
+                    #print("Local PDF shape : {}".format(localPDFs.shape))
                     alpha = 0.9
                     s = 5
                     #astrohist(evidences, ax=axs, bins='blocks', label='ellSigmaPrior ='+' 1e{}'.format(np.log10(hyperParam)))
-                    axs.scatter(allTargetZ, allEv, label='ellSigmaPrior = {}'.format(hyperParam), alpha=alpha, s=s)
-                    axs.set_xlabel('target z')
-                    axs.set_ylabel('evidences')
-                    axs.set_yscale('log')
-                    axs.set_title('Evidences : likelihood integrated over redshift for each SED')
-                    #axs.legend(loc="center right")
+                    #print("{} target redshifts, {} evidences.".format(len(allTargetZ), len(allEv)))
+                    #axs[ligne, colonne].hist2d(allTargetZ, allEv, bins=[100, 100],\
+                    #                           density=True, cmap="Reds", alpha=alpha)#,\
+                                               #range=[[np.min(abscissa_list), np.max(abscissa_list)], [-10, 200]])
+                    axs[ligne, colonne].scatter(allTargetZ, allEv, label='ellSigmaPrior = {}'.format(hyperParam), alpha=alpha, s=s)
+                    axs[ligne, colonne].set_xlabel('target z')
+                    axs[ligne, colonne].set_ylabel('evidences')
+                    axs[ligne, colonne].set_yscale('log')
+                    axs[ligne, colonne].set_title('Evidences : likelihood integrated over spec-z')
+                    axs[ligne, colonne].set_title('ellSigmaPrior = {}'.format(hyperParam))
+                    axs[ligne, colonne].legend(loc="upper right")
+                    if colonne < 1:
+                        colonne+=1
+                    else:
+                        ligne+=1
+                        colonne=0
                     ### WHAT ARE THE DIMENSIONS OF THE OBJECTS (8 SEDs in template fitting, how many here?) ###
 
                 if params['useCompression'] and params['compressionFilesFound']:
                     fC.close()
                     fCI.close()
-                fig.legend()
+                #fig.legend()
+                fig.suptitle('Evidences : likelihood integrated over spec-z')
                 fig.show()
                 #fig2.legend()
                 #fig2.show()
