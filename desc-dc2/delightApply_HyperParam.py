@@ -103,7 +103,9 @@ def delightApply_HyperParam(configfilename, hyperParam_name="", hyperParam_list=
         margLike_list=[]
         abscissaML_list=[]
         for chunk in range(numChunks):
+            print("chunk {}".format(chunk))
             TR_firstLine = int(chunk * numObjectsTraining / float(numChunks))
+            print("TR_firstLine {}".format(TR_firstLine))
             TR_lastLine = int(min(numObjectsTraining, (chunk + 1) * numObjectsTarget / float(numChunks)))
             targetIndices = np.arange(TR_firstLine, TR_lastLine)
             numTObjCk = TR_lastLine - TR_firstLine
@@ -121,12 +123,20 @@ def delightApply_HyperParam(configfilename, hyperParam_name="", hyperParam_list=
             nbLin = (len(hyperParam_list)+1) // 2
             fig1, axs1 = plt.subplots(nbLin, nbCol, figsize=(nbCol*6, nbLin*5), constrained_layout=True)
             ligne, colonne = 0, 0
+
+            if params['useCompression'] and params['compressionFilesFound']:
+                fC = open(params['compressMargLikFile'])
+                fCI = open(params['compressIndicesFile'])
+                itCompM = itertools.islice(fC, firstLine, lastLine)
+                iterCompI = itertools.islice(fCI, firstLine, lastLine)
+            
+            trainingDataIter = getDataFromFile(params, TR_firstLine, TR_lastLine,prefix="training_", ftype="gpparams")
             
             for hyperParam in hyperParam_list:
                 allEv=[]
                 allTargetZ=[]
-                loc = TR_firstLine - 1
-                trainingDataIter = getDataFromFile(params, TR_firstLine, TR_lastLine,prefix="training_", ftype="gpparams")
+                 #loc = TR_firstLine - 1
+                #print(loc)
                 if hyperParam_name == "V_C":
                     print("Creating GP for {} = {}".format(hyperParam_name, hyperParam))
                     gp = PhotozGP(f_mod_interp,
@@ -159,8 +169,9 @@ def delightApply_HyperParam(configfilename, hyperParam_name="", hyperParam_list=
                               params['V_C'], params['V_L'],
                               params['alpha_C'], hyperParam,
                               redshiftGridGP, use_interpolators=True)
-
+                    
                 # loop on training data to load the GP parameter
+                print("Training loop")
                 for loc, (z, ell, bands, X, B, flatarray) in enumerate(trainingDataIter):
                     t1 = time()
                     redshifts[loc] = z              # redshift of all training samples
@@ -172,10 +183,11 @@ def delightApply_HyperParam(configfilename, hyperParam_name="", hyperParam_list=
                     model_mean[:, loc, :], model_covar[:, loc, :] = gp.predictAndInterpolate(redshiftGrid, ell=ell)
                     t2 = time()
                     # print(loc, t2-t1)
+                print("End of Training loop, {} iterations".format(loc))
 
                     ### CALCUL MARGINAL LIKELIHODD OU AUTRE METRIQUE ###
-                    margLike_list.append(gp.margLike())
-                    abscissaML_list.append(hyperParam)
+                    #margLike_list.append(gp.margLike())
+                    #abscissaML_list.append(hyperParam)
 
                 #Redshift prior on training galaxy
                 # p_t = params['p_t'][bestTypes][None, :]
@@ -186,15 +198,10 @@ def delightApply_HyperParam(configfilename, hyperParam_name="", hyperParam_list=
                 # prior *= p_t * redshiftGrid[:, None] *
                 # np.exp(-0.5 * redshiftGrid[:, None]**2 / p_z_t) / p_z_t
 
-                if params['useCompression'] and params['compressionFilesFound']:
-                    fC = open(params['compressMargLikFile'])
-                    fCI = open(params['compressIndicesFile'])
-                    itCompM = itertools.islice(fC, firstLine, lastLine)
-                    iterCompI = itertools.islice(fCI, firstLine, lastLine)
-
                 targetDataIter = getDataFromFile(params, firstLine, lastLine,prefix="target_", getXY=False, CV=False)
 
                 # loop on target samples
+                print("Target loop")
                 for loc, (z, normedRefFlux, bands, fluxes, fluxesVar, bCV, dCV, dVCV) in enumerate(targetDataIter):
                     t1 = time()
                     ell_hat_z = normedRefFlux * 4 * np.pi * params['fluxLuminosityNorm'] * (DL(redshiftGrid)**2. * (1+redshiftGrid))
@@ -250,6 +257,7 @@ def delightApply_HyperParam(configfilename, hyperParam_name="", hyperParam_list=
                     t4 = time()
                     if loc % 100 == 0:
                         print(loc, t2-t1, t3-t2, t4-t3)
+                print("End of target loop, {} iterations".format(loc))
 
                 alpha = 0.9
                 s = 5
@@ -258,12 +266,12 @@ def delightApply_HyperParam(configfilename, hyperParam_name="", hyperParam_list=
                 #axs[ligne, colonne].hist2d(allTargetZ, allEv, bins=[100, 100],\
                 #                           density=True, cmap="Reds", alpha=alpha)#,\
                                            #range=[[np.min(abscissa_list), np.max(abscissa_list)], [-10, 200]])
-                axs1[ligne, colonne].scatter(allTargetZ, allEv, label='ellSigmaPrior = {}'.format(hyperParam), alpha=alpha, s=s)
+                axs1[ligne, colonne].scatter(allTargetZ, allEv, label='{} = {}'.format(hyperParam_name, hyperParam), alpha=alpha, s=s)
                 axs1[ligne, colonne].set_xlabel('target z')
                 axs1[ligne, colonne].set_ylabel('evidences')
                 axs1[ligne, colonne].set_yscale('log')
-                axs1[ligne, colonne].set_title('Evidences : likelihood integrated over spec-z')
-                axs1[ligne, colonne].set_title('ellSigmaPrior = {}'.format(hyperParam))
+                axs1[ligne, colonne].set_title('Evidences : likelihood*prior integrated over spec-z')
+                axs1[ligne, colonne].set_title('{} = {}'.format(hyperParam_name, hyperParam))
                 axs1[ligne, colonne].legend(loc="upper right")
                 if colonne < 1:
                     colonne+=1
@@ -272,24 +280,26 @@ def delightApply_HyperParam(configfilename, hyperParam_name="", hyperParam_list=
                     colonne=0
                 ### WHAT ARE THE DIMENSIONS OF THE OBJECTS (8 SEDs in template fitting, how many here?) ###
 
-                if params['useCompression'] and params['compressionFilesFound']:
-                    fC.close()
-                    fCI.close()
+            if params['useCompression'] and params['compressionFilesFound']:
+                fC.close()
+                fCI.close()
 
             ### PLOT METRIQUE ###
-            alpha = 0.9
-            s = 5
-            fig, ax = plt.subplots(constrained_layout=True)
+            #alpha = 0.9
+            #s = 5
+            #fig, ax = plt.subplots(figsize=(12, 8), constrained_layout=True)
 
-            vs = ax.hist2d(abscissa_list, margLike_list, bins=[100, 20],\
-                           range=[[np.min(abscissa_list), np.max(abscissa_list)], [-10, 200]],\
-                           density=True, cmap="Reds", alpha=alpha)
+            #vs = ax.hist2d(abscissa_list, margLike_list, bins=[100, 20],\
+            #               range=[[np.min(abscissa_list), np.max(abscissa_list)], [-10, 300]],\
+            #               density=True, cmap="Reds", alpha=alpha)
 
-            ax.set_xlabel(hyperParam_name)
-            ax.set_ylabel('GP Marginal likelihood')
-            ax.set_title('Training chunk No {}'.format(chunk))
-            fig.suptitle('Effect of hyperparameter '+hyperParam_name+' on GP marginal likelihood during estimation process.')
-            fig.show()
+            #ax.set_xlabel(hyperParam_name)
+            #ax.set_ylabel('GP Marginal likelihood')
+            #ax.set_title('Training chunk No {}'.format(chunk))
+            #fig.suptitle('Effect of hyperparameter '+hyperParam_name+' on GP marginal likelihood during estimation process.')
+            fig1.suptitle('Effect of hyperparameter '+hyperParam_name+' on evidences during estimation process.')
+            #fig.show()
+            fig1.show()
                 
     else:
         for chunk in range(numChunks):
