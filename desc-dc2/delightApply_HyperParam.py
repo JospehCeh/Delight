@@ -266,13 +266,24 @@ def delightApply_HyperParam(configfilename, hyperParam_name="", hyperParam_list=
                 #axs[ligne, colonne].hist2d(allTargetZ, allEv, bins=[100, 100],\
                 #                           density=True, cmap="Reds", alpha=alpha)#,\
                                            #range=[[np.min(abscissa_list), np.max(abscissa_list)], [-10, 200]])
-                axs1[ligne, colonne].scatter(allTargetZ, allEv, label='{} = {}'.format(hyperParam_name, hyperParam), alpha=alpha, s=s)
-                axs1[ligne, colonne].set_xlabel('target z')
-                axs1[ligne, colonne].set_ylabel('evidences')
-                axs1[ligne, colonne].set_yscale('log')
-                axs1[ligne, colonne].set_title('Evidences : likelihood*prior integrated over spec-z')
-                axs1[ligne, colonne].set_title('{} = {}'.format(hyperParam_name, hyperParam))
-                axs1[ligne, colonne].legend(loc="upper right")
+                
+                if nbLin > 1:
+                    axs1[ligne, colonne].scatter(allTargetZ, allEv, label='{} = {}'.format(hyperParam_name, hyperParam), alpha=alpha, s=s)
+                    axs1[ligne, colonne].set_xlabel('target z')
+                    axs1[ligne, colonne].set_ylabel('evidences')
+                    axs1[ligne, colonne].set_yscale('log')
+                    axs1[ligne, colonne].set_title('Evidences : likelihood*prior integrated over spec-z')
+                    axs1[ligne, colonne].set_title('{} = {}'.format(hyperParam_name, hyperParam))
+                    axs1[ligne, colonne].legend(loc="upper right")
+                else:
+                    axs1[colonne].scatter(allTargetZ, allEv, label='{} = {}'.format(hyperParam_name, hyperParam), alpha=alpha, s=s)
+                    axs1[colonne].set_xlabel('target z')
+                    axs1[colonne].set_ylabel('evidences')
+                    axs1[colonne].set_yscale('log')
+                    axs1[colonne].set_title('Evidences : likelihood*prior integrated over spec-z')
+                    axs1[colonne].set_title('{} = {}'.format(hyperParam_name, hyperParam))
+                    axs1[colonne].legend(loc="upper right")
+                
                 if colonne < 1:
                     colonne+=1
                 else:
@@ -453,13 +464,24 @@ def delightApply_HyperParam(configfilename, hyperParam_name="", hyperParam_list=
                     #axs[ligne, colonne].hist2d(allTargetZ, allEv, bins=[100, 100],\
                     #                           density=True, cmap="Reds", alpha=alpha)#,\
                                                #range=[[np.min(abscissa_list), np.max(abscissa_list)], [-10, 200]])
-                    axs[ligne, colonne].scatter(allTargetZ, allEv, label='ellSigmaPrior = {}'.format(hyperParam), alpha=alpha, s=s)
-                    axs[ligne, colonne].set_xlabel('target z')
-                    axs[ligne, colonne].set_ylabel('evidences')
-                    axs[ligne, colonne].set_yscale('log')
-                    axs[ligne, colonne].set_title('Evidences : likelihood integrated over spec-z')
-                    axs[ligne, colonne].set_title('ellSigmaPrior = {}'.format(hyperParam))
-                    axs[ligne, colonne].legend(loc="upper right")
+                    
+                    if nbLin > 1:
+                        axs[ligne, colonne].scatter(allTargetZ, allEv, label='ellSigmaPrior = {}'.format(hyperParam), alpha=alpha, s=s)
+                        axs[ligne, colonne].set_xlabel('target z')
+                        axs[ligne, colonne].set_ylabel('evidences')
+                        axs[ligne, colonne].set_yscale('log')
+                        axs[ligne, colonne].set_title('Evidences : likelihood integrated over spec-z')
+                        axs[ligne, colonne].set_title('ellSigmaPrior = {}'.format(hyperParam))
+                        axs[ligne, colonne].legend(loc="upper right")
+                    else:
+                        axs[colonne].scatter(allTargetZ, allEv, label='ellSigmaPrior = {}'.format(hyperParam), alpha=alpha, s=s)
+                        axs[colonne].set_xlabel('target z')
+                        axs[colonne].set_ylabel('evidences')
+                        axs[colonne].set_yscale('log')
+                        axs[colonne].set_title('Evidences : likelihood integrated over spec-z')
+                        axs[colonne].set_title('ellSigmaPrior = {}'.format(hyperParam))
+                        axs[colonne].legend(loc="upper right")
+                    
                     if colonne < 1:
                         colonne+=1
                     else:
