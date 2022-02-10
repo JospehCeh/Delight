@@ -12,6 +12,7 @@ from delight.io import *
 from delight.utils import *
 from delight.photoz_gp import PhotozGP
 from delight.photoz_kernels import Photoz_mean_function, Photoz_kernel
+import matplotlib.pyplot as plt
 
 import coloredlogs
 import logging
@@ -131,6 +132,22 @@ def delightLearn_paramSpec(configfilename, V_C=-1.0, V_L=-1.0, alpha_C=-1.0, alp
             ind = np.array([list(bandIndicesCV).index(b) for b in bandsCV])
 
             chi2sLocal[firstLine + loc, ind] = - 0.5 * (model_mean[0, bandsCV] - fluxesCV)**2 /(model_covar[0, bandsCV] + fluxesVarCV)
+        
+        # Plot MargLike avec fonction incluse (limitée à V_C et alpha_C)
+        quot = (lastLine - firstLine)//10
+        if loc % quot == 0:
+            vcList = np.logspace(-1, 6, 50)
+            allMargLike = []
+            for vc in vcList:
+                allMargLike.append(gp.updateHyperparamatersAndReturnMarglike(pars=(vc, alpha_C)))
+            figMargLike, axMargLike = plt.subplots(1, 1, figsize=(8, 6), constrained_layout=True)
+            axMargLike.plot(vcList, allMargLike, label="Training galaxy No. {}, z = {}".format(loc, z))
+            axMargLike.set_xlabel("$V_C$")
+            axMargLike.set_ylabel("GP Marginal Likelihood")
+            axMargLike.set_yscale('log')
+            figMargLike.legend(loc='lower center')
+            figMargLike.suptitle("GP marginal likelihood in function of V_C for training galaxy No. {}, z = {}".format(loc, z))
+            dummy = gp.updateHyperparamatersAndReturnMarglike(pars=(V_C, alpha_C))
 
 
    

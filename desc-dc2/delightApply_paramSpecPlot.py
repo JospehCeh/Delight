@@ -48,6 +48,7 @@ def delightApply_paramSpecPlot(configfilename, V_C=-1.0, V_L=-1.0, alpha_C=-1.0,
     # Read filter coefficients, compute normalization of filters
     bandCoefAmplitudes, bandCoefPositions, bandCoefWidths, norms = readBandCoefficients(params)
     numBands = bandCoefAmplitudes.shape[0]
+    band_name=["DC2LSST_u","DC2LSST_g","DC2LSST_r","DC2LSST_i","DC2LSST_z","DC2LSST_y"]
 
     redshiftDistGrid, redshiftGrid, redshiftGridGP = createGrids(params)
     f_mod_interp = readSEDs(params)
@@ -99,7 +100,10 @@ def delightApply_paramSpecPlot(configfilename, V_C=-1.0, V_L=-1.0, alpha_C=-1.0,
     
     for chunk in range(numChunks):
         TR_firstLine = int(chunk * numObjectsTraining / float(numChunks))
-        TR_lastLine = int(min(numObjectsTraining, (chunk + 1) * numObjectsTarget / float(numChunks)))
+        if numObjectsTarget >= numObjectsTraining:
+            TR_lastLine = int(min(numObjectsTraining, (chunk + 1) * numObjectsTarget / float(numChunks)))
+        else:
+            TR_lastLine = int(numObjectsTraining)
         targetIndices = np.arange(TR_firstLine, TR_lastLine)
         numTObjCk = TR_lastLine - TR_firstLine
         redshifts = np.zeros((numTObjCk, ))
@@ -134,12 +138,62 @@ def delightApply_paramSpecPlot(configfilename, V_C=-1.0, V_L=-1.0, alpha_C=-1.0,
             model_mean[:, loc, :], model_covar[:, loc, :] = gp.predictAndInterpolate(redshiftGrid, ell=ell)
             t2 = time()
             # print(loc, t2-t1)
+            quot = (TR_lastLine - TR_firstLine)//10
+            if loc % quot == 0:
+                figMeanCov, axMeanCov = plt.subplots(1, 2, figsize=(12, 6), constrained_layout=True)
+                #print(bands)
+                #print(model_mean[:, loc, 0].shape)
+                for band in bands:
+                    #print(band_name[int(band)])
+                    axMeanCov[0].plot(redshiftGrid, model_mean[:, loc, int(band)], label=band_name[int(band)])
+                    axMeanCov[1].plot(redshiftGrid, model_covar[:, loc, int(band)], label=band_name[int(band)])
+                axMeanCov[0].set_xlabel("redshiftGrid")
+                axMeanCov[0].set_ylabel("model_mean[:, {}, band]".format(loc))
+                axMeanCov[0].set_yscale('log')
+                axMeanCov[0].set_title("Model mean")
+                axMeanCov[1].set_xlabel("redshiftGrid")
+                axMeanCov[1].set_ylabel("model_covar[:, {}, band]".format(loc))
+                axMeanCov[1].set_yscale('log')
+                axMeanCov[1].set_title("Model covar")
+                axMeanCov[0].legend(loc='upper center')
+                figMeanCov.suptitle("GP prediction and interpolation results for training galaxy No. {}, z = {}".format(loc, z))
+
+                # Plot MargLike avec fonction incluse (limitée à V_C et alpha_C)
+                vcList = np.logspace(-1, 6, 50)
+                allMargLike = []
+                #trainingDataIter1_list = list(getDataFromFile(params, TR_firstLine, TR_lastLine,prefix="training_", getXY=True,CV=False))
+                #z1, normedRefFlux1, bands1, fluxes1, fluxesVar1, bandsCV1, fluxesCV1, fluxesVarCV1, X1, Y1, Yvar1 = trainingDataIter1_list[loc]
+                #gp.Y = Y1
+                #gp.Yvar = Yvar1
+                #for vc in vcList:
+                #    allMargLike.append(gp.updateHyperparamatersAndReturnMarglike(pars=(vc, alpha_C)))
+                #figMargLike, axMargLike = plt.subplots(1, 1, figsize=(8, 6), constrained_layout=True)
+                #axMargLike.plot(vcList, allMargLike, label="Training galaxy No. {}, z = {}".format(loc, z))
+                #axMargLike.set_xlabel("$V_C$")
+                #axMargLike.set_ylabel("GP Marginal Likelihood")
+                #axMargLike.set_yscale('log')
+                #figMargLike.legend(loc='lower center')
+                #figMargLike.suptitle("GP marginal likelihood in function of V_C for training galaxy No. {}, z = {}".format(loc, z))
+        
 
         #Redshift prior on training galaxy
         # p_t = params['p_t'][bestTypes][None, :]
         # p_z_t = params['p_z_t'][bestTypes][None, :]
         # compute the prior for taht training sample
         prior = np.exp(-0.5*((redshiftGrid[:, None]-redshifts[None, :]) /params['zPriorSigma'])**2)
+        #print(prior.shape)
+        figPrior, axPrior = plt.subplots(1, 1, figsize=(12, 10), constrained_layout=True)
+        for TRind in range(prior.shape[1]):
+            quot = (prior.shape[1])//5
+            if TRind % quot == 0:
+                axPrior.plot(redshiftGrid, prior[:, TRind], label="z-training = {}".format(redshifts[TRind]))
+        axPrior.set_xlabel("redshiftGrid")
+        axPrior.set_ylabel("prior")
+        axPrior.set_yscale('log')
+        figPrior.suptitle("Prior in delightApply, zPriorSigma = {}".format(params['zPriorSigma']))
+        figPrior.legend(loc='upper right')
+                
+        
         # prior[prior < 1e-6] = 0
         # prior *= p_t * redshiftGrid[:, None] *
         # np.exp(-0.5 * redshiftGrid[:, None]**2 / p_z_t) / p_z_t
@@ -160,7 +214,9 @@ def delightApply_paramSpecPlot(configfilename, V_C=-1.0, V_L=-1.0, alpha_C=-1.0,
             
             for ellPriorSigma in ellPriorSigma_list:
                 allEv = []
-                allTargetZ = []
+                allTargetZx = []
+                allTargetZy = []
+                targetZ = []
                 print("Computation of likelihood and evidences for ellPriorSigma = {}".format(ellPriorSigma))
                 targetDataIter = getDataFromFile(params, firstLine, lastLine,prefix="target_", getXY=False, CV=False)
                 # ~ loc, (z, normedRefFlux, bands, fluxes, fluxesVar, bCV, dCV, dVCV) = list(enumerate(targetDataIter))[0]
@@ -193,12 +249,14 @@ def delightApply_paramSpecPlot(configfilename, V_C=-1.0, V_L=-1.0, alpha_C=-1.0,
                     localPDFs[loc, :] += like_grid.sum(axis=1)  # the final redshift posterior is sum over training galaxies posteriors
 
                     # compute the evidence for each model
+                    targetZ.append(z)
                     evidences = np.trapz(like_grid, x=redshiftGrid, axis=0)
                     for ev in evidences:
                         allEv.append(ev)
-                        allTargetZ.append(z)
-                    #print('Likelihoods shape : {}'.format(like_grid.shape))
-                    #print('Evidences shape : {}'.format(evidences.shape))
+                        allTargetZy.append(z)
+                    print('Likelihoods shape : {}'.format(like_grid.shape))
+                    print('Evidences shape : {}'.format(evidences.shape))
+                    print('PDFs shape : {}'.format(localPDFs.shape))
 
                     t3 = time()
 
@@ -221,6 +279,7 @@ def delightApply_paramSpecPlot(configfilename, V_C=-1.0, V_L=-1.0, alpha_C=-1.0,
                     t4 = time()
                     if loc % 100 == 0:
                         print(loc, t2-t1, t3-t2, t4-t3)
+                        #print("fluxes = {},\nflux variances = {}".format(fluxes, fluxesVar))
 
                 ### PLOT LIKE_GRID and/or EVIDENCES, for a SINGLE GALAXY MAYBE? ###
                 ## Plot for this iteration on ellPriorSigma:
@@ -242,28 +301,44 @@ def delightApply_paramSpecPlot(configfilename, V_C=-1.0, V_L=-1.0, alpha_C=-1.0,
                 #print("Local PDF shape : {}".format(localPDFs.shape))
                 alpha = 0.9
                 s = 5
-                #astrohist(evidences, ax=axs, bins='blocks', label='ellSigmaPrior ='+' 1e{}'.format(np.log10(hyperParam)))
-                #print("{} target redshifts, {} evidences.".format(len(allTargetZ), len(allEv)))
-                #axs[ligne, colonne].hist2d(allTargetZ, allEv, bins=[100, 100],\
-                #                           density=True, cmap="Reds", alpha=alpha)#,\
-                                           #range=[[np.min(abscissa_list), np.max(abscissa_list)], [-10, 200]])
+                cmap = "coolwarm_r"
+
+                indEv = 0
+                for ev in allEv:
+                    allTargetZx.append(targetZ[indEv%len(targetZ)])
+                    indEv+=1
                 
                 if nbLin > 1:
-                    axs[ligne, colonne].scatter(allTargetZ, allEv, label='ellPriorSigma = {}'.format(ellPriorSigma), alpha=alpha, s=s)
-                    axs[ligne, colonne].set_xlabel('target z')
-                    axs[ligne, colonne].set_ylabel('evidences')
+                    #vs=axs[ligne, colonne].scatter(allTargetZx, allTargetZy, c=allEv, cmap=cmap, label='ellPriorSigma = {}'.format(ellPriorSigma), alpha=alpha, s=s)
+                    axs[ligne, colonne].set_xlabel('target-z')
+                    axs[ligne, colonne].set_ylabel('evidence')
+                    #clb = plt.colorbar(vs, ax=axs[ligne,colonne])
+                    #clb.set_label('Evidence at target-$z$')
+                    
+                    #print("{} target redshifts, {} evidences.".format(len(allTargetZ), len(allEv)))
+                    axs[ligne, colonne].hist2d(allTargetZx, allEv, bins=[100, 100],\
+                                               density=True, cmap="Reds", alpha=alpha)
+                    
                     axs[ligne, colonne].set_yscale('log')
                     axs[ligne, colonne].set_title('Evidences : likelihood integrated over spec-z')
                     axs[ligne, colonne].set_title('ellPriorSigma = {}'.format(ellPriorSigma))
                     axs[ligne, colonne].legend(loc="upper right")
+                    #astrohist(allEv, ax=axs[ligne, colonne], bins='blocks')
                 else:
-                    axs[colonne].scatter(allTargetZ, allEv, label='ellPriorSigma = {}'.format(ellPriorSigma), alpha=alpha, s=s)
+                    #vs=axs[colonne].scatter(allTargetZx, allTargetZy, c=allEv, cmap=cmap, label='ellPriorSigma = {}'.format(ellPriorSigma), alpha=alpha, s=s)
                     axs[colonne].set_xlabel('target z')
-                    axs[colonne].set_ylabel('evidences')
+                    axs[colonne].set_ylabel('evidence')
+                    #clb = plt.colorbar(vs, ax=axs[colonne])
+                    #clb.set_label('Evidence at target-$z$')
+
+                    axs[colonne].hist2d(allTargetZx, allEv, bins=[50, 50],\
+                           density=True, cmap="Reds", alpha=alpha)
+
                     axs[colonne].set_yscale('log')
                     axs[colonne].set_title('Evidences : likelihood integrated over spec-z')
                     axs[colonne].set_title('ellPriorSigma = {}'.format(ellPriorSigma))
                     axs[colonne].legend(loc="upper right")
+                    #astrohist(allEv, ax=axs[ligne, colonne], bins='blocks')
                 
                 if colonne < 1:
                     colonne+=1
