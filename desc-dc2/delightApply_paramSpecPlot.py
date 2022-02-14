@@ -10,6 +10,7 @@ from delight.utils_cy import approx_flux_likelihood_cy
 from time import time
 from astropy.visualization import hist as astrohist
 import matplotlib.pyplot as plt
+from matplotlib.colors import LogNorm
 
 import coloredlogs
 import logging
@@ -214,7 +215,7 @@ def delightApply_paramSpecPlot(configfilename, V_C=-1.0, V_L=-1.0, alpha_C=-1.0,
             
             for ellPriorSigma in ellPriorSigma_list:
                 allEv = []
-                allTargetZx = []
+                allTrainingZx = []
                 allTargetZy = []
                 targetZ = []
                 print("Computation of likelihood and evidences for ellPriorSigma = {}".format(ellPriorSigma))
@@ -254,9 +255,6 @@ def delightApply_paramSpecPlot(configfilename, V_C=-1.0, V_L=-1.0, alpha_C=-1.0,
                     for ev in evidences:
                         allEv.append(ev)
                         allTargetZy.append(z)
-                    print('Likelihoods shape : {}'.format(like_grid.shape))
-                    print('Evidences shape : {}'.format(evidences.shape))
-                    print('PDFs shape : {}'.format(localPDFs.shape))
 
                     t3 = time()
 
@@ -279,6 +277,9 @@ def delightApply_paramSpecPlot(configfilename, V_C=-1.0, V_L=-1.0, alpha_C=-1.0,
                     t4 = time()
                     if loc % 100 == 0:
                         print(loc, t2-t1, t3-t2, t4-t3)
+                        print('Likelihoods shape : {}'.format(like_grid.shape))
+                        print('Evidences shape : {}'.format(evidences.shape))
+                        print('PDFs shape : {}'.format(localPDFs.shape))
                         #print("fluxes = {},\nflux variances = {}".format(fluxes, fluxesVar))
 
                 ### PLOT LIKE_GRID and/or EVIDENCES, for a SINGLE GALAXY MAYBE? ###
@@ -305,40 +306,67 @@ def delightApply_paramSpecPlot(configfilename, V_C=-1.0, V_L=-1.0, alpha_C=-1.0,
 
                 indEv = 0
                 for ev in allEv:
-                    allTargetZx.append(targetZ[indEv%len(targetZ)])
+                    allTrainingZx.append(redshifts[indEv%len(redshifts)])
                     indEv+=1
                 
+                allOrd = []
+                allAbs = []
+                allPdf = []
+                targetInd = -1
+                print(len(targetZ), len(redshiftGrid))
+                for tgZ in targetZ:
+                    targetInd+=1
+                    specInd = -1
+                    for spZ in redshiftGrid:
+                        specInd+=1
+                        allOrd.append(spZ)
+                        allAbs.append(tgZ)
+                        allPdf.append(localPDFs[targetInd, specInd])
+                
+                print("specInd = {}, targetInd = {}".format(specInd, targetInd))
+                
                 if nbLin > 1:
-                    #vs=axs[ligne, colonne].scatter(allTargetZx, allTargetZy, c=allEv, cmap=cmap, label='ellPriorSigma = {}'.format(ellPriorSigma), alpha=alpha, s=s)
-                    axs[ligne, colonne].set_xlabel('target-z')
-                    axs[ligne, colonne].set_ylabel('evidence')
-                    #clb = plt.colorbar(vs, ax=axs[ligne,colonne])
-                    #clb.set_label('Evidence at target-$z$')
+                    #axs[ligne, colonne].set_xlabel('Training z')
+                    #axs[ligne, colonne].set_ylabel('evidence')
+                    #axs[ligne, colonne].hist2d(allTrainingZx, allEv, bins=[100, 100],\
+                    #                           density=True, cmap="Reds", alpha=alpha)
                     
-                    #print("{} target redshifts, {} evidences.".format(len(allTargetZ), len(allEv)))
-                    axs[ligne, colonne].hist2d(allTargetZx, allEv, bins=[100, 100],\
-                                               density=True, cmap="Reds", alpha=alpha)
+                    #axs[ligne, colonne].set_yscale('log')
+                    #axs[ligne, colonne].set_title('Evidences : likelihood integrated over spec-z')
+                    #axs[ligne, colonne].set_title('ellPriorSigma = {}'.format(ellPriorSigma))
+                    #axs[ligne, colonne].legend(loc="upper right")
+                    #astrohist(allEv, ax=axs[ligne, colonne], bins='blocks')
                     
-                    axs[ligne, colonne].set_yscale('log')
-                    axs[ligne, colonne].set_title('Evidences : likelihood integrated over spec-z')
+                    vs=axs[ligne, colonne].scatter(allAbs, allOrd, c=allPdf, cmap=cmap, label='ellPriorSigma = {}'.format(ellPriorSigma), alpha=alpha, s=s, norm=LogNorm())
+                    axs[ligne, colonne].set_xlabel('Target z')
+                    axs[ligne, colonne].set_ylabel('Spec z')
+                    clb = plt.colorbar(vs, ax=axs[ligne,colonne])
+                    clb.set_label('PDF')
+
+                    axs[ligne, colonne].set_title('PDFs : probability of spec-z given target-z')
                     axs[ligne, colonne].set_title('ellPriorSigma = {}'.format(ellPriorSigma))
                     axs[ligne, colonne].legend(loc="upper right")
-                    #astrohist(allEv, ax=axs[ligne, colonne], bins='blocks')
                 else:
-                    #vs=axs[colonne].scatter(allTargetZx, allTargetZy, c=allEv, cmap=cmap, label='ellPriorSigma = {}'.format(ellPriorSigma), alpha=alpha, s=s)
-                    axs[colonne].set_xlabel('target z')
-                    axs[colonne].set_ylabel('evidence')
-                    #clb = plt.colorbar(vs, ax=axs[colonne])
-                    #clb.set_label('Evidence at target-$z$')
+                    #axs[colonne].set_xlabel('Training z')
+                    #axs[colonne].set_ylabel('evidence')
+                    #axs[colonne].hist2d(allTrainingZx, allEv, bins=[100, 100],\
+                    #                           density=True, cmap="Reds", alpha=alpha)
+                    
+                    #axs[colonne].set_yscale('log')
+                    #axs[colonne].set_title('Evidences : likelihood integrated over spec-z')
+                    #axs[colonne].set_title('ellPriorSigma = {}'.format(ellPriorSigma))
+                    #axs[colonne].legend(loc="upper right")
+                    #astrohist(allEv, ax=axs[colonne], bins='blocks')
+                    
+                    vs=axs[colonne].scatter(allAbs, allOrd, c=allPdf, cmap=cmap, label='ellPriorSigma = {}'.format(ellPriorSigma), alpha=alpha, s=s, norm=LogNorm())
+                    axs[colonne].set_xlabel('Target z')
+                    axs[colonne].set_ylabel('Spec z')
+                    clb = plt.colorbar(vs, ax=axs[colonne])
+                    clb.set_label('PDF')
 
-                    axs[colonne].hist2d(allTargetZx, allEv, bins=[50, 50],\
-                           density=True, cmap="Reds", alpha=alpha)
-
-                    axs[colonne].set_yscale('log')
-                    axs[colonne].set_title('Evidences : likelihood integrated over spec-z')
+                    axs[colonne].set_title('PDFs : probability of spec-z given target-z')
                     axs[colonne].set_title('ellPriorSigma = {}'.format(ellPriorSigma))
                     axs[colonne].legend(loc="upper right")
-                    #astrohist(allEv, ax=axs[ligne, colonne], bins='blocks')
                 
                 if colonne < 1:
                     colonne+=1
