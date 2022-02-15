@@ -10,7 +10,7 @@ import sys
 import numpy as np
 from delight.io import *
 from delight.utils import *
-from delight.photoz_gp import PhotozGP
+from photoz_gp import PhotozGP
 from delight.photoz_kernels import Photoz_mean_function, Photoz_kernel
 import matplotlib.pyplot as plt
 
@@ -136,18 +136,37 @@ def delightLearn_paramSpec(configfilename, V_C=-1.0, V_L=-1.0, alpha_C=-1.0, alp
         # Plot MargLike avec fonction incluse (limitée à V_C et alpha_C)
         quot = (lastLine - firstLine)//10
         if loc % quot == 0:
-            vcList = np.logspace(-1, 6, 50)
+            values = np.logspace(-1, 6, 50)
             allMargLike = []
-            for vc in vcList:
-                allMargLike.append(gp.updateHyperparamatersAndReturnMarglike(pars=(vc, alpha_C)))
             figMargLike, axMargLike = plt.subplots(1, 1, figsize=(8, 6), constrained_layout=True)
-            axMargLike.plot(vcList, allMargLike, label="Training galaxy No. {}, z = {}".format(loc, z))
-            axMargLike.set_xlabel("$V_C$")
+            for val in values:
+                allMargLike.append(gp.updateHyperparamatersAndReturnMarglike_continuum(pars=(val, alpha_C)))
+            axMargLike.plot(values, allMargLike, label="Varying $V_C$")
+            dummy = gp.updateHyperparamatersAndReturnMarglike_continuum(pars=(V_C, alpha_C))
+            
+            allMargLike = []
+            for val in values:
+                allMargLike.append(gp.updateHyperparamatersAndReturnMarglike_continuum(pars=(V_C, val)))
+            axMargLike.plot(values, allMargLike, label="Varying $alpha_C$")
+            dummy = gp.updateHyperparamatersAndReturnMarglike_continuum(pars=(V_C, alpha_C))
+            
+            allMargLike = []
+            for val in values:
+                allMargLike.append(gp.updateHyperparamatersAndReturnMarglike_lines(pars=(val, alpha_L)))
+            axMargLike.plot(values, allMargLike, label="Varying $V_L$")
+            dummy = gp.updateHyperparamatersAndReturnMarglike_lines(pars=(V_L, alpha_L))
+            
+            allMargLike = []
+            for val in values:
+                allMargLike.append(gp.updateHyperparamatersAndReturnMarglike_lines(pars=(V_L, val)))
+            axMargLike.plot(values, allMargLike, label="Varying $alpha_L$")
+            dummy = gp.updateHyperparamatersAndReturnMarglike_lines(pars=(V_L, alpha_L))
+            
+            axMargLike.set_xlabel("$V_C$, $alpha_C$, $V_L$, $alpha_L$")
             axMargLike.set_ylabel("GP Marginal Likelihood")
             axMargLike.set_yscale('log')
             figMargLike.legend(loc='lower center')
-            figMargLike.suptitle("GP marginal likelihood in function of V_C for training galaxy No. {}, z = {}".format(loc, z))
-            dummy = gp.updateHyperparamatersAndReturnMarglike(pars=(V_C, alpha_C))
+            figMargLike.suptitle("GP marginal likelihood in function of hyperparameters for training galaxy No. {}, z = {}".format(loc, z))
 
 
    

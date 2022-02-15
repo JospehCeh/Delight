@@ -4,7 +4,7 @@ import sys
 import numpy as np
 from delight.io import *
 from delight.utils import *
-from delight.photoz_gp import PhotozGP
+from photoz_gp import PhotozGP
 from delight.photoz_kernels import Photoz_mean_function, Photoz_kernel
 from delight.utils_cy import approx_flux_likelihood_cy
 from time import time
@@ -141,40 +141,23 @@ def delightApply_paramSpecPlot(configfilename, V_C=-1.0, V_L=-1.0, alpha_C=-1.0,
             # print(loc, t2-t1)
             quot = (TR_lastLine - TR_firstLine)//10
             if loc % quot == 0:
-                figMeanCov, axMeanCov = plt.subplots(1, 2, figsize=(12, 6), constrained_layout=True)
+                figMeanCov, axMeanCov = plt.subplots(1, 1, figsize=(12, 6), constrained_layout=True)
                 #print(bands)
                 #print(model_mean[:, loc, 0].shape)
                 for band in bands:
                     #print(band_name[int(band)])
-                    axMeanCov[0].plot(redshiftGrid, model_mean[:, loc, int(band)], label=band_name[int(band)])
-                    axMeanCov[1].plot(redshiftGrid, model_covar[:, loc, int(band)], label=band_name[int(band)])
-                axMeanCov[0].set_xlabel("redshiftGrid")
-                axMeanCov[0].set_ylabel("model_mean[:, {}, band]".format(loc))
-                axMeanCov[0].set_yscale('log')
-                axMeanCov[0].set_title("Model mean")
-                axMeanCov[1].set_xlabel("redshiftGrid")
-                axMeanCov[1].set_ylabel("model_covar[:, {}, band]".format(loc))
-                axMeanCov[1].set_yscale('log')
-                axMeanCov[1].set_title("Model covar")
-                axMeanCov[0].legend(loc='upper center')
+                    axMeanCov.errorbar(redshiftGrid, model_mean[:, loc, int(band)], yerr=model_covar[:, loc, int(band)], label=band_name[int(band)], fmt='o', markersize=3, capsize=0)
+                    #axMeanCov[1].plot(redshiftGrid, model_covar[:, loc, int(band)], label=band_name[int(band)])
+                axMeanCov.set_xlabel("redshiftGrid")
+                axMeanCov.set_ylabel("Mean flux - training No {}]".format(loc))
+                axMeanCov.set_yscale('log')
+                axMeanCov.set_title("Predicted mean flux")
+                #axMeanCov[1].set_xlabel("redshiftGrid")
+                #axMeanCov[1].set_ylabel("model_covar[:, {}, band]".format(loc))
+                #axMeanCov[1].set_yscale('log')
+                #axMeanCov[1].set_title("Model covar")
+                axMeanCov.legend(loc='upper center')
                 figMeanCov.suptitle("GP prediction and interpolation results for training galaxy No. {}, z = {}".format(loc, z))
-
-                # Plot MargLike avec fonction incluse (limitée à V_C et alpha_C)
-                vcList = np.logspace(-1, 6, 50)
-                allMargLike = []
-                #trainingDataIter1_list = list(getDataFromFile(params, TR_firstLine, TR_lastLine,prefix="training_", getXY=True,CV=False))
-                #z1, normedRefFlux1, bands1, fluxes1, fluxesVar1, bandsCV1, fluxesCV1, fluxesVarCV1, X1, Y1, Yvar1 = trainingDataIter1_list[loc]
-                #gp.Y = Y1
-                #gp.Yvar = Yvar1
-                #for vc in vcList:
-                #    allMargLike.append(gp.updateHyperparamatersAndReturnMarglike(pars=(vc, alpha_C)))
-                #figMargLike, axMargLike = plt.subplots(1, 1, figsize=(8, 6), constrained_layout=True)
-                #axMargLike.plot(vcList, allMargLike, label="Training galaxy No. {}, z = {}".format(loc, z))
-                #axMargLike.set_xlabel("$V_C$")
-                #axMargLike.set_ylabel("GP Marginal Likelihood")
-                #axMargLike.set_yscale('log')
-                #figMargLike.legend(loc='lower center')
-                #figMargLike.suptitle("GP marginal likelihood in function of V_C for training galaxy No. {}, z = {}".format(loc, z))
         
 
         #Redshift prior on training galaxy
@@ -207,18 +190,25 @@ def delightApply_paramSpecPlot(configfilename, V_C=-1.0, V_L=-1.0, alpha_C=-1.0,
 
         if sensitivity and len(ellPriorSigma_list) > 0:
             print("Study of the influence of ellPriorSigma on likelihood and evidences")
-            nbCol = 2
-            nbLin = (len(ellPriorSigma_list)+1) // 2
-            fig, axs = plt.subplots(nbLin, nbCol, figsize=(nbCol*6, nbLin*5), constrained_layout=True)
-            ligne, colonne = 0, 0
-            #fig2, axs2 = plt.subplots(constrained_layout=True)
+            # ~ nbCol = 2
+            # ~ nbLin = (len(ellPriorSigma_list)+1) // 2
+            # ~ fig, axs = plt.subplots(nbLin, nbCol, figsize=(nbCol*6, nbLin*5), constrained_layout=True)
+            # ~ ligne, colonne = 0, 0
+            fig2, axs2 = plt.subplots(1, 2, figsize=(12,10), constrained_layout=True)
             
             for ellPriorSigma in ellPriorSigma_list:
                 allEv = []
                 allTrainingZx = []
                 allTargetZy = []
                 targetZ = []
+                zMaxEv_list=[]
+                zAvg_list=[]
+                errZmaxEv_list = []
+                errZavg_list = []
+                figEv, axEv = plt.subplots(2, 2, figsize=(12,20), constrained_layout=True)
+                ligne, colonne = 0,0
                 print("Computation of likelihood and evidences for ellPriorSigma = {}".format(ellPriorSigma))
+                
                 targetDataIter = getDataFromFile(params, firstLine, lastLine,prefix="target_", getXY=False, CV=False)
                 # ~ loc, (z, normedRefFlux, bands, fluxes, fluxesVar, bCV, dCV, dVCV) = list(enumerate(targetDataIter))[0]
                 for loc, (z, normedRefFlux, bands, fluxes, fluxesVar, bCV, dCV, dVCV) in enumerate(targetDataIter):
@@ -252,6 +242,14 @@ def delightApply_paramSpecPlot(configfilename, V_C=-1.0, V_L=-1.0, alpha_C=-1.0,
                     # compute the evidence for each model
                     targetZ.append(z)
                     evidences = np.trapz(like_grid, x=redshiftGrid, axis=0)
+                    zMaxEv = redshifts[np.argmax(evidences)]
+                    zMaxEv_list.append(zMaxEv)
+                    zAvg = np.average(redshifts, weights=evidences)
+                    zAvg_list.append(zAvg)
+                    errZ = (zMaxEv - z) / z
+                    errZmaxEv_list.append(errZ)
+                    errZavg = (zAvg - z) / z
+                    errZavg_list.append(errZavg)
                     for ev in evidences:
                         allEv.append(ev)
                         allTargetZy.append(z)
@@ -275,11 +273,35 @@ def delightApply_paramSpecPlot(configfilename, V_C=-1.0, V_L=-1.0, alpha_C=-1.0,
                          and localPDFs[loc, :].sum() > 0:
                         localMetrics[loc, :] = computeMetrics(z, redshiftGrid,localPDFs[loc, :],params['confidenceLevels'])
                     t4 = time()
+                    
                     if loc % 100 == 0:
                         print(loc, t2-t1, t3-t2, t4-t3)
                         print('Likelihoods shape : {}'.format(like_grid.shape))
                         print('Evidences shape : {}'.format(evidences.shape))
                         print('PDFs shape : {}'.format(localPDFs.shape))
+                        
+                    quot = (lastLine - firstLine) // 4
+                    if loc % quot == 0:
+                        alpha = 0.9
+                        s = 5
+                        evp=axEv[ligne, colonne].scatter(redshifts, evidences, label="Evidence", alpha=alpha, s=s)
+                        axEv[ligne, colonne].axvline(z, label="Target z = {}".format(z), c=evp.get_facecolor()[-1], lw=1)
+                        axEv[ligne, colonne].axvline(zMaxEv, c=evp.get_facecolor()[-1], lw=1, ls=':', label="Max. evid. z = {}".format(zMaxEv))
+                        axEv[ligne, colonne].axvline(zAvg, c=evp.get_facecolor()[-1], lw=1, ls='-.', label="Avg z = {}".format(zAvg))
+                        axEv[ligne, colonne].set_xlabel("Training z")
+                        axEv[ligne, colonne].set_ylabel("Evidence")
+                        axEv[ligne, colonne].legend()
+                        # ~ axEv.set_yscale('log')
+                        if colonne == 1:
+                            ligne+=1
+                            colonne=0
+                        else:
+                            colonne+=1
+                figEv.suptitle("Evidence for training z for a given target z ; ellPriorSigma = {}".format(ellPriorSigma))
+                #figEv.legend(loc='upper right')
+                        
+                        
+                        
                         #print("fluxes = {},\nflux variances = {}".format(fluxes, fluxesVar))
 
                 ### PLOT LIKE_GRID and/or EVIDENCES, for a SINGLE GALAXY MAYBE? ###
@@ -289,99 +311,105 @@ def delightApply_paramSpecPlot(configfilename, V_C=-1.0, V_L=-1.0, alpha_C=-1.0,
                     # ~ #for colonne in np.arange(2):
                 # ~ plotInd += 1
                 # ~ #print((like_grid[:, plotInd]).shape , len(redshiftGrid))
-                # ~ axs2.plot(redshiftGrid, like_grid[:, plotInd], label='ellSigmaPrior = {}'.format(hyperParam) )
-                # ~ axs2.set_xlabel('z-spec')
-                # ~ axs2.set_ylabel('fluxLikelihood * prior')
-                # ~ if np.all(like_grid[:, plotInd] > 0):
-                    # ~ axs2.set_yscale('log')
-                # ~ else:
-                    # ~ axs2.set_yscale('linear')
-                # ~ axs2.set_title('SED {}'.format(sed_names[plotInd]))
-                # ~ #axs2.legend(loc="center right")
+                zLims=[np.min(targetZ), np.max(targetZ)]
+                axs2[0].plot(zLims, zLims, c='k', lw=1, zorder=0, alpha=1)
+                zpt=axs2[0].plot(targetZ, zMaxEv_list, label='Z max. ev., ellPriorSigma = {}'.format(ellPriorSigma) )
+                axs2[0].plot(targetZ, zAvg_list, ls=':', c=zpt[-1].get_color(), label='Z avg')
+                axs2[0].set_xlabel('Target Z')
+                axs2[0].set_ylabel('Training Z of maximum evidence')
+                axs2[0].set_yscale('linear')
+                axs2[0].set_title('Maximum evidence redshift')
+                erzpt=axs2[1].plot(targetZ, errZmaxEv_list)
+                axs2[1].plot(targetZ, errZavg_list, ls=':', c=erzpt[-1].get_color())
+                axs2[1].set_xlabel('Target Z')
+                axs2[1].set_ylabel('Error on Z')
+                axs2[1].set_yscale('log')
+                axs2[1].set_title('Error vs. target redshift')
+                #axs2.legend(loc="center right")
 
                 #print("Local PDF shape : {}".format(localPDFs.shape))
-                alpha = 0.9
-                s = 5
-                cmap = "coolwarm_r"
+                # ~ alpha = 0.9
+                # ~ s = 5
+                # ~ cmap = "coolwarm_r"
 
-                indEv = 0
-                for ev in allEv:
-                    allTrainingZx.append(redshifts[indEv%len(redshifts)])
-                    indEv+=1
+                # ~ indEv = 0
+                # ~ for ev in allEv:
+                    # ~ allTrainingZx.append(redshifts[indEv%len(redshifts)])
+                    # ~ indEv+=1
                 
-                allOrd = []
-                allAbs = []
-                allPdf = []
-                targetInd = -1
-                print(len(targetZ), len(redshiftGrid))
-                for tgZ in targetZ:
-                    targetInd+=1
-                    specInd = -1
-                    for spZ in redshiftGrid:
-                        specInd+=1
-                        allOrd.append(spZ)
-                        allAbs.append(tgZ)
-                        allPdf.append(localPDFs[targetInd, specInd])
+                # ~ allOrd = []
+                # ~ allAbs = []
+                # ~ allPdf = []
+                # ~ targetInd = -1
+                # ~ print(len(targetZ), len(redshiftGrid))
+                # ~ for tgZ in targetZ:
+                    # ~ targetInd+=1
+                    # ~ specInd = -1
+                    # ~ for spZ in redshiftGrid:
+                        # ~ specInd+=1
+                        # ~ allOrd.append(spZ)
+                        # ~ allAbs.append(tgZ)
+                        # ~ allPdf.append(localPDFs[targetInd, specInd])
                 
-                print("specInd = {}, targetInd = {}".format(specInd, targetInd))
+                # ~ print("specInd = {}, targetInd = {}".format(specInd, targetInd))
                 
-                if nbLin > 1:
-                    #axs[ligne, colonne].set_xlabel('Training z')
-                    #axs[ligne, colonne].set_ylabel('evidence')
-                    #axs[ligne, colonne].hist2d(allTrainingZx, allEv, bins=[100, 100],\
-                    #                           density=True, cmap="Reds", alpha=alpha)
+                # ~ if nbLin > 1:
+                    # ~ #axs[ligne, colonne].set_xlabel('Training z')
+                    # ~ #axs[ligne, colonne].set_ylabel('evidence')
+                    # ~ #axs[ligne, colonne].hist2d(allTrainingZx, allEv, bins=[100, 100],\
+                    # ~ #                           density=True, cmap="Reds", alpha=alpha)
                     
-                    #axs[ligne, colonne].set_yscale('log')
-                    #axs[ligne, colonne].set_title('Evidences : likelihood integrated over spec-z')
-                    #axs[ligne, colonne].set_title('ellPriorSigma = {}'.format(ellPriorSigma))
-                    #axs[ligne, colonne].legend(loc="upper right")
-                    #astrohist(allEv, ax=axs[ligne, colonne], bins='blocks')
+                    # ~ #axs[ligne, colonne].set_yscale('log')
+                    # ~ #axs[ligne, colonne].set_title('Evidences : likelihood integrated over spec-z')
+                    # ~ #axs[ligne, colonne].set_title('ellPriorSigma = {}'.format(ellPriorSigma))
+                    # ~ #axs[ligne, colonne].legend(loc="upper right")
+                    # ~ #astrohist(allEv, ax=axs[ligne, colonne], bins='blocks')
                     
-                    vs=axs[ligne, colonne].scatter(allAbs, allOrd, c=allPdf, cmap=cmap, label='ellPriorSigma = {}'.format(ellPriorSigma), alpha=alpha, s=s, norm=LogNorm())
-                    axs[ligne, colonne].set_xlabel('Target z')
-                    axs[ligne, colonne].set_ylabel('Spec z')
-                    clb = plt.colorbar(vs, ax=axs[ligne,colonne])
-                    clb.set_label('PDF')
+                    # ~ vs=axs[ligne, colonne].scatter(allAbs, allOrd, c=allPdf, cmap=cmap, label='ellPriorSigma = {}'.format(ellPriorSigma), alpha=alpha, s=s, norm=LogNorm())
+                    # ~ axs[ligne, colonne].set_xlabel('Target z')
+                    # ~ axs[ligne, colonne].set_ylabel('Spec z')
+                    # ~ clb = plt.colorbar(vs, ax=axs[ligne,colonne])
+                    # ~ clb.set_label('PDF')
 
-                    axs[ligne, colonne].set_title('PDFs : probability of spec-z given target-z')
-                    axs[ligne, colonne].set_title('ellPriorSigma = {}'.format(ellPriorSigma))
-                    axs[ligne, colonne].legend(loc="upper right")
-                else:
-                    #axs[colonne].set_xlabel('Training z')
-                    #axs[colonne].set_ylabel('evidence')
-                    #axs[colonne].hist2d(allTrainingZx, allEv, bins=[100, 100],\
-                    #                           density=True, cmap="Reds", alpha=alpha)
+                    # ~ axs[ligne, colonne].set_title('PDFs : probability of spec-z given target-z')
+                    # ~ axs[ligne, colonne].set_title('ellPriorSigma = {}'.format(ellPriorSigma))
+                    # ~ axs[ligne, colonne].legend(loc="upper right")
+                # ~ else:
+                    # ~ #axs[colonne].set_xlabel('Training z')
+                    # ~ #axs[colonne].set_ylabel('evidence')
+                    # ~ #axs[colonne].hist2d(allTrainingZx, allEv, bins=[100, 100],\
+                    # ~ #                           density=True, cmap="Reds", alpha=alpha)
                     
-                    #axs[colonne].set_yscale('log')
-                    #axs[colonne].set_title('Evidences : likelihood integrated over spec-z')
-                    #axs[colonne].set_title('ellPriorSigma = {}'.format(ellPriorSigma))
-                    #axs[colonne].legend(loc="upper right")
-                    #astrohist(allEv, ax=axs[colonne], bins='blocks')
+                    # ~ #axs[colonne].set_yscale('log')
+                    # ~ #axs[colonne].set_title('Evidences : likelihood integrated over spec-z')
+                    # ~ #axs[colonne].set_title('ellPriorSigma = {}'.format(ellPriorSigma))
+                    # ~ #axs[colonne].legend(loc="upper right")
+                    # ~ #astrohist(allEv, ax=axs[colonne], bins='blocks')
                     
-                    vs=axs[colonne].scatter(allAbs, allOrd, c=allPdf, cmap=cmap, label='ellPriorSigma = {}'.format(ellPriorSigma), alpha=alpha, s=s, norm=LogNorm())
-                    axs[colonne].set_xlabel('Target z')
-                    axs[colonne].set_ylabel('Spec z')
-                    clb = plt.colorbar(vs, ax=axs[colonne])
-                    clb.set_label('PDF')
+                    # ~ vs=axs[colonne].scatter(allAbs, allOrd, c=allPdf, cmap=cmap, label='ellPriorSigma = {}'.format(ellPriorSigma), alpha=alpha, s=s, norm=LogNorm())
+                    # ~ axs[colonne].set_xlabel('Target z')
+                    # ~ axs[colonne].set_ylabel('Spec z')
+                    # ~ clb = plt.colorbar(vs, ax=axs[colonne])
+                    # ~ clb.set_label('PDF')
 
-                    axs[colonne].set_title('PDFs : probability of spec-z given target-z')
-                    axs[colonne].set_title('ellPriorSigma = {}'.format(ellPriorSigma))
-                    axs[colonne].legend(loc="upper right")
+                    # ~ axs[colonne].set_title('PDFs : probability of spec-z given target-z')
+                    # ~ axs[colonne].set_title('ellPriorSigma = {}'.format(ellPriorSigma))
+                    # ~ axs[colonne].legend(loc="upper right")
                 
-                if colonne < 1:
-                    colonne+=1
-                else:
-                    ligne+=1
-                    colonne=0
+                # ~ if colonne < 1:
+                    # ~ colonne+=1
+                # ~ else:
+                    # ~ ligne+=1
+                    # ~ colonne=0
                 ### WHAT ARE THE DIMENSIONS OF THE OBJECTS (8 SEDs in template fitting, how many here?) ###
 
             if params['useCompression'] and params['compressionFilesFound']:
                 fC.close()
                 fCI.close()
             #fig.legend()
-            fig.suptitle('V_C = {}, V_L = {}, alpha_C = {}, alpha_L = {}'.format(V_C, V_L, alpha_C, alpha_L))
-            fig.show()
-            #fig2.legend()
+            #fig.suptitle('V_C = {}, V_L = {}, alpha_C = {}, alpha_L = {}'.format(V_C, V_L, alpha_C, alpha_L))
+            #fig.show()
+            fig2.legend()
             #fig2.show()
         else:
             targetDataIter = getDataFromFile(params, firstLine, lastLine,prefix="target_", getXY=False, CV=False)
