@@ -133,8 +133,8 @@ def delightLearn_paramSpec(configfilename, V_C=-1.0, V_L=-1.0, alpha_C=-1.0, alp
 
             chi2sLocal[firstLine + loc, ind] = - 0.5 * (model_mean[0, bandsCV] - fluxesCV)**2 /(model_covar[0, bandsCV] + fluxesVarCV)
         
-        # Plot MargLike avec fonction incluse (limitée à V_C et alpha_C)
-        quot = (lastLine - firstLine)//10
+        # Plot MargLike avec fonction incluse
+        quot = (lastLine - firstLine)//3
         if loc % quot == 0:
             values = np.logspace(-1, 6, 50)
             allMargLike = []
