@@ -21,7 +21,7 @@ coloredlogs.install(level='DEBUG', logger=logger,fmt='%(asctime)s,%(msecs)03d %(
 
 
 
-def delightApply_paramSpecPlot(configfilename, V_C=-1.0, V_L=-1.0, alpha_C=-1.0, alpha_L=-1.0, sensitivity=False, ellPriorSigma_list=[]):
+def delightApply_paramSpecPlot(configfilename, V_C=-1.0, V_L=-1.0, alpha_C=-1.0, alpha_L=-1.0, sensitivity=False, ellPriorSigma_list=[], zPriorSigma=-1, plot=True):
     """
 
     :param configfilename:
@@ -42,6 +42,8 @@ def delightApply_paramSpecPlot(configfilename, V_C=-1.0, V_L=-1.0, alpha_C=-1.0,
         alpha_C = params['alpha_C']
     if alpha_L  < 0:
         alpha_L = params['alpha_L']
+    if zPriorSigma < 0:
+        zPriorSigma = params['zPriorSigma']
 
     if threadNum == 0:
         logger.info("--- DELIGHT-APPLY ---")
@@ -140,7 +142,7 @@ def delightApply_paramSpecPlot(configfilename, V_C=-1.0, V_L=-1.0, alpha_C=-1.0,
             t2 = time()
             # print(loc, t2-t1)
             quot = (TR_lastLine - TR_firstLine)//3
-            if loc == 1 or loc % quot == quot-1:
+            if (loc == 1 or loc % quot == quot-1) and plot:
                 figMeanCov, axMeanCov = plt.subplots(1, 1, figsize=(12, 6), constrained_layout=True)
                 #print(bands)
                 #print(model_mean[:, loc, 0].shape)
@@ -164,18 +166,27 @@ def delightApply_paramSpecPlot(configfilename, V_C=-1.0, V_L=-1.0, alpha_C=-1.0,
         # p_t = params['p_t'][bestTypes][None, :]
         # p_z_t = params['p_z_t'][bestTypes][None, :]
         # compute the prior for taht training sample
-        prior = np.exp(-0.5*((redshiftGrid[:, None]-redshifts[None, :]) /params['zPriorSigma'])**2)
         #print(prior.shape)
-        figPrior, axPrior = plt.subplots(1, 1, figsize=(12, 10), constrained_layout=True)
+        if plot:
+            figPrior, axPrior = plt.subplots(1, 1, figsize=(12, 10), constrained_layout=True)
+            prior = np.exp(-0.5*((redshiftGrid[:, None]-redshifts[None, :]) /(5*zPriorSigma))**2)
+            for TRind in range(prior.shape[1]):
+                quot = (prior.shape[1])//5
+                if (TRind == 1 or TRind % quot == quot-1) and plot:
+                    axPrior.plot(redshiftGrid, prior[:, TRind], label="z-training = {}, zPriorSigma = {}".format(redshifts[TRind], 5*zPriorSigma), ls=':')
+        
+        prior = np.exp(-0.5*((redshiftGrid[:, None]-redshifts[None, :]) /zPriorSigma)**2)
+        #print(prior.shape)
         for TRind in range(prior.shape[1]):
             quot = (prior.shape[1])//5
-            if TRind == 1 or TRind % quot == quot-1:
-                axPrior.plot(redshiftGrid, prior[:, TRind], label="z-training = {}".format(redshifts[TRind]))
-        axPrior.set_xlabel("redshiftGrid")
-        axPrior.set_ylabel("prior")
-        axPrior.set_yscale('log')
-        figPrior.suptitle("Prior in delightApply, zPriorSigma = {}".format(params['zPriorSigma']))
-        figPrior.legend(loc='upper right')
+            if (TRind == 1 or TRind % quot == quot-1) and plot:
+                axPrior.plot(redshiftGrid, prior[:, TRind], label="z-training = {}, zPriorSigma = {}".format(redshifts[TRind], zPriorSigma))
+        if plot:
+            axPrior.set_xlabel("redshiftGrid")
+            axPrior.set_ylabel("prior")
+            axPrior.set_yscale('linear')
+            figPrior.suptitle("Prior in delightApply, zPriorSigma_1 = {} vs. zPriorSigma_2 = {}".format(5*zPriorSigma, zPriorSigma))
+            figPrior.legend(loc='upper right')
                 
         
         # prior[prior < 1e-6] = 0
@@ -190,12 +201,13 @@ def delightApply_paramSpecPlot(configfilename, V_C=-1.0, V_L=-1.0, alpha_C=-1.0,
 
         if sensitivity and len(ellPriorSigma_list) > 0:
             print("Study of the influence of ellPriorSigma on likelihood and evidences")
-            # ~ nbCol = 2
-            # ~ nbLin = (len(ellPriorSigma_list)+1) // 2
-            # ~ fig, axs = plt.subplots(nbLin, nbCol, figsize=(nbCol*6, nbLin*5), constrained_layout=True)
-            # ~ ligne, colonne = 0, 0
-            fig2, axs2 = plt.subplots(1, 2, figsize=(12,10), constrained_layout=True)
-            fig3, axs3 = plt.subplots(1, 2, figsize=(12,10), constrained_layout=True)
+            if plot:
+                # ~ nbCol = 2
+                # ~ nbLin = (len(ellPriorSigma_list)+1) // 2
+                # ~ fig, axs = plt.subplots(nbLin, nbCol, figsize=(nbCol*6, nbLin*5), constrained_layout=True)
+                # ~ ligne, colonne = 0, 0
+                fig2, axs2 = plt.subplots(1, 2, figsize=(12,10), constrained_layout=True)
+                fig3, axs3 = plt.subplots(1, 2, figsize=(12,10), constrained_layout=True)
             
             for ellPriorSigma in ellPriorSigma_list:
                 allEv = []
@@ -206,13 +218,15 @@ def delightApply_paramSpecPlot(configfilename, V_C=-1.0, V_L=-1.0, alpha_C=-1.0,
                 zAvg_list=[]
                 errZmaxEv_list = []
                 errZavg_list = []
-                figEv, axEv = plt.subplots(2, 2, figsize=(12,20), constrained_layout=True)
+                if plot:
+                    figEv, axEv = plt.subplots(2, 2, figsize=(12,20), constrained_layout=True)
                 zMAP_list=[]
                 zMean_list=[]
                 errZMAP_list = []
                 errZMean_list = []
                 # ~ figPdf, axPdf = plt.subplots(2, 2, figsize=(12,20), constrained_layout=True)
-                ligne, colonne = 0,0
+                if plot:
+                    ligne, colonne = 0,0
                 print("Computation of likelihood and evidences for ellPriorSigma = {}".format(ellPriorSigma))
                 
                 targetDataIter = getDataFromFile(params, firstLine, lastLine,prefix="target_", getXY=False, CV=False)
@@ -301,7 +315,7 @@ def delightApply_paramSpecPlot(configfilename, V_C=-1.0, V_L=-1.0, alpha_C=-1.0,
                         print('PDFs shape : {}'.format(localPDFs.shape))
                         
                     quot = (lastLine - firstLine) // 3
-                    if loc == 1 or loc % quot == quot-1:
+                    if (loc == 1 or loc % quot == quot-1) and plot:
                         alpha = 0.9
                         s = 5
                         evp=axEv[ligne, colonne].scatter(redshifts, evidences, label="Evidence", alpha=alpha, s=s, color='b')
@@ -326,137 +340,61 @@ def delightApply_paramSpecPlot(configfilename, V_C=-1.0, V_L=-1.0, alpha_C=-1.0,
                             colonne=0
                         else:
                             colonne+=1
-                figEv.suptitle("Evidence (resp. PDF) for training (resp. spec) z for a given target z ; V_C, alpha_C, V_L, alpha_L = {}, {}, {}, {}, ellPriorSigma = {}".format(V_C, alpha_C, V_L, alpha_L, ellPriorSigma))
-                # ~ figPdf.suptitle("PDF for spec. z for a given target z ; ellPriorSigma = {}".format(ellPriorSigma))
-                #figEv.legend(loc='upper right')
-                        
-                        
-                        
-                        #print("fluxes = {},\nflux variances = {}".format(fluxes, fluxesVar))
+                if plot:
+                    figEv.suptitle("Evidence (resp. PDF) for training (resp. spec) z for a given target z ; V_C, alpha_C, V_L, alpha_L = {}, {}, {}, {}, ellPriorSigma = {}".format(V_C, alpha_C, V_L, alpha_L, ellPriorSigma))
+                    # ~ figPdf.suptitle("PDF for spec. z for a given target z ; ellPriorSigma = {}".format(ellPriorSigma))
+                    #figEv.legend(loc='upper right')
 
                 ### PLOT LIKE_GRID and/or EVIDENCES, for a SINGLE GALAXY MAYBE? ###
-                ## Plot for this iteration on ellPriorSigma:
-                # ~ plotInd = -1
-                # ~ #for ligne in np.arange(4):
-                    # ~ #for colonne in np.arange(2):
-                # ~ plotInd += 1
-                # ~ #print((like_grid[:, plotInd]).shape , len(redshiftGrid))
-                zLims=[np.min(targetZ), np.max(targetZ)]
-                axs2[0].plot(zLims, zLims, c='k', lw=1, zorder=0, alpha=1)
-                zpt=axs2[0].scatter(targetZ, zMaxEv_list, marker='.', label='Z max. ev., ellPriorSigma = {}'.format(ellPriorSigma) )
-                axs2[0].scatter(targetZ, zAvg_list, marker='+', color=zpt.get_facecolor()[-1], label='Z avg')
-                axs2[0].set_xlabel('Target Z')
-                axs2[0].set_ylabel('Training Z of maximum evidence')
-                axs2[0].set_yscale('linear')
-                axs2[0].set_title('Maximum evidence redshift')
-                erzpt=axs2[1].scatter(targetZ, errZmaxEv_list, marker='.')
-                axs2[1].scatter(targetZ, errZavg_list, marker='+', color=erzpt.get_facecolor()[-1])
-                axs2[1].set_xlabel('Target Z')
-                axs2[1].set_ylabel('Error on Z')
-                axs2[1].set_yscale('log')
-                axs2[1].set_title('Error vs. target redshift')
-                #axs2.legend(loc="center right")
-                
-                axs3[0].plot(zLims, zLims, c='k', lw=1, zorder=0, alpha=1)
-                zmappt=axs3[0].scatter(targetZ, zMAP_list, marker='.', label='Z max. ev., ellPriorSigma = {}'.format(ellPriorSigma) )
-                axs3[0].scatter(targetZ, zMean_list, marker='+', color=zmappt.get_facecolor()[-1], label='Z avg')
-                axs3[0].set_xlabel('Target Z')
-                axs3[0].set_ylabel('Spec Z')
-                axs3[0].set_yscale('linear')
-                axs3[0].set_title('Maximum A Posteriori redshift / Mean redshift')
-                erzmappt=axs3[1].scatter(targetZ, errZMAP_list, marker='.')
-                axs3[1].scatter(targetZ, errZMean_list, marker='+', color=erzmappt.get_facecolor()[-1])
-                axs3[1].set_xlabel('Target Z')
-                axs3[1].set_ylabel('Error on Z')
-                axs3[1].set_yscale('log')
-                axs3[1].set_title('Error vs. target redshift')
-                #axs3.legend(loc="center right")
+                if plot:
+                    ## Plot for this iteration on ellPriorSigma:
+                    # ~ plotInd = -1
+                    # ~ #for ligne in np.arange(4):
+                        # ~ #for colonne in np.arange(2):
+                    # ~ plotInd += 1
+                    # ~ #print((like_grid[:, plotInd]).shape , len(redshiftGrid))
+                    zLims=[np.min(targetZ), np.max(targetZ)]
+                    axs2[0].plot(zLims, zLims, c='k', lw=1, zorder=0, alpha=1)
+                    zpt=axs2[0].scatter(targetZ, zMaxEv_list, marker='.', label='Z max. ev., ellPriorSigma = {}'.format(ellPriorSigma) )
+                    axs2[0].scatter(targetZ, zAvg_list, marker='+', color=zpt.get_facecolor()[-1], label='Z avg')
+                    axs2[0].set_xlabel('Target Z')
+                    axs2[0].set_ylabel('Training Z of maximum evidence')
+                    axs2[0].set_yscale('linear')
+                    axs2[0].set_title('Maximum evidence redshift')
+                    erzpt=axs2[1].scatter(targetZ, errZmaxEv_list, marker='.')
+                    axs2[1].scatter(targetZ, errZavg_list, marker='+', color=erzpt.get_facecolor()[-1])
+                    axs2[1].set_xlabel('Target Z')
+                    axs2[1].set_ylabel('Error on Z')
+                    axs2[1].set_yscale('log')
+                    axs2[1].set_title('Error vs. target redshift')
+                    #axs2.legend(loc="center right")
 
-                #print("Local PDF shape : {}".format(localPDFs.shape))
-                # ~ alpha = 0.9
-                # ~ s = 5
-                # ~ cmap = "coolwarm_r"
-
-                # ~ indEv = 0
-                # ~ for ev in allEv:
-                    # ~ allTrainingZx.append(redshifts[indEv%len(redshifts)])
-                    # ~ indEv+=1
-                
-                # ~ allOrd = []
-                # ~ allAbs = []
-                # ~ allPdf = []
-                # ~ targetInd = -1
-                # ~ print(len(targetZ), len(redshiftGrid))
-                # ~ for tgZ in targetZ:
-                    # ~ targetInd+=1
-                    # ~ specInd = -1
-                    # ~ for spZ in redshiftGrid:
-                        # ~ specInd+=1
-                        # ~ allOrd.append(spZ)
-                        # ~ allAbs.append(tgZ)
-                        # ~ allPdf.append(localPDFs[targetInd, specInd])
-                
-                # ~ print("specInd = {}, targetInd = {}".format(specInd, targetInd))
-                
-                # ~ if nbLin > 1:
-                    # ~ #axs[ligne, colonne].set_xlabel('Training z')
-                    # ~ #axs[ligne, colonne].set_ylabel('evidence')
-                    # ~ #axs[ligne, colonne].hist2d(allTrainingZx, allEv, bins=[100, 100],\
-                    # ~ #                           density=True, cmap="Reds", alpha=alpha)
-                    
-                    # ~ #axs[ligne, colonne].set_yscale('log')
-                    # ~ #axs[ligne, colonne].set_title('Evidences : likelihood integrated over spec-z')
-                    # ~ #axs[ligne, colonne].set_title('ellPriorSigma = {}'.format(ellPriorSigma))
-                    # ~ #axs[ligne, colonne].legend(loc="upper right")
-                    # ~ #astrohist(allEv, ax=axs[ligne, colonne], bins='blocks')
-                    
-                    # ~ vs=axs[ligne, colonne].scatter(allAbs, allOrd, c=allPdf, cmap=cmap, label='ellPriorSigma = {}'.format(ellPriorSigma), alpha=alpha, s=s, norm=LogNorm())
-                    # ~ axs[ligne, colonne].set_xlabel('Target z')
-                    # ~ axs[ligne, colonne].set_ylabel('Spec z')
-                    # ~ clb = plt.colorbar(vs, ax=axs[ligne,colonne])
-                    # ~ clb.set_label('PDF')
-
-                    # ~ axs[ligne, colonne].set_title('PDFs : probability of spec-z given target-z')
-                    # ~ axs[ligne, colonne].set_title('ellPriorSigma = {}'.format(ellPriorSigma))
-                    # ~ axs[ligne, colonne].legend(loc="upper right")
-                # ~ else:
-                    # ~ #axs[colonne].set_xlabel('Training z')
-                    # ~ #axs[colonne].set_ylabel('evidence')
-                    # ~ #axs[colonne].hist2d(allTrainingZx, allEv, bins=[100, 100],\
-                    # ~ #                           density=True, cmap="Reds", alpha=alpha)
-                    
-                    # ~ #axs[colonne].set_yscale('log')
-                    # ~ #axs[colonne].set_title('Evidences : likelihood integrated over spec-z')
-                    # ~ #axs[colonne].set_title('ellPriorSigma = {}'.format(ellPriorSigma))
-                    # ~ #axs[colonne].legend(loc="upper right")
-                    # ~ #astrohist(allEv, ax=axs[colonne], bins='blocks')
-                    
-                    # ~ vs=axs[colonne].scatter(allAbs, allOrd, c=allPdf, cmap=cmap, label='ellPriorSigma = {}'.format(ellPriorSigma), alpha=alpha, s=s, norm=LogNorm())
-                    # ~ axs[colonne].set_xlabel('Target z')
-                    # ~ axs[colonne].set_ylabel('Spec z')
-                    # ~ clb = plt.colorbar(vs, ax=axs[colonne])
-                    # ~ clb.set_label('PDF')
-
-                    # ~ axs[colonne].set_title('PDFs : probability of spec-z given target-z')
-                    # ~ axs[colonne].set_title('ellPriorSigma = {}'.format(ellPriorSigma))
-                    # ~ axs[colonne].legend(loc="upper right")
-                
-                # ~ if colonne < 1:
-                    # ~ colonne+=1
-                # ~ else:
-                    # ~ ligne+=1
-                    # ~ colonne=0
-                ### WHAT ARE THE DIMENSIONS OF THE OBJECTS (8 SEDs in template fitting, how many here?) ###
+                    axs3[0].plot(zLims, zLims, c='k', lw=1, zorder=0, alpha=1)
+                    zmappt=axs3[0].scatter(targetZ, zMAP_list, marker='.', label='Z max. ev., ellPriorSigma = {}'.format(ellPriorSigma) )
+                    axs3[0].scatter(targetZ, zMean_list, marker='+', color=zmappt.get_facecolor()[-1], label='Z avg')
+                    axs3[0].set_xlabel('Target Z')
+                    axs3[0].set_ylabel('Spec Z')
+                    axs3[0].set_yscale('linear')
+                    axs3[0].set_title('Maximum A Posteriori redshift / Mean redshift')
+                    erzmappt=axs3[1].scatter(targetZ, errZMAP_list, marker='.')
+                    axs3[1].scatter(targetZ, errZMean_list, marker='+', color=erzmappt.get_facecolor()[-1])
+                    axs3[1].set_xlabel('Target Z')
+                    axs3[1].set_ylabel('Error on Z')
+                    axs3[1].set_yscale('log')
+                    axs3[1].set_title('Error vs. target redshift')
+                    ### WHAT ARE THE DIMENSIONS OF THE OBJECTS (8 SEDs in template fitting, how many here?) ###
 
             if params['useCompression'] and params['compressionFilesFound']:
                 fC.close()
                 fCI.close()
-            #fig.legend()
-            #fig.suptitle('V_C = {}, V_L = {}, alpha_C = {}, alpha_L = {}'.format(V_C, V_L, alpha_C, alpha_L))
-            #fig.show()
-            fig2.legend()
-            fig3.legend()
-            #fig2.show()
+            
+            if plot:
+                #fig.legend()
+                #fig.suptitle('V_C = {}, V_L = {}, alpha_C = {}, alpha_L = {}'.format(V_C, V_L, alpha_C, alpha_L))
+                #fig.show()
+                fig2.legend()
+                fig3.legend()
+                #fig2.show()
         else:
             targetDataIter = getDataFromFile(params, firstLine, lastLine,prefix="target_", getXY=False, CV=False)
             # loop on target samples

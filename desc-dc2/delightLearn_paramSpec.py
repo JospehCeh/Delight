@@ -21,7 +21,7 @@ import logging
 logger = logging.getLogger(__name__)
 coloredlogs.install(level='DEBUG', logger=logger,fmt='%(asctime)s,%(msecs)03d %(programname)s, %(name)s[%(process)d] %(levelname)s %(message)s')
 
-def delightLearn_paramSpec(configfilename, V_C=-1.0, V_L=-1.0, alpha_C=-1.0, alpha_L=-1.0):
+def delightLearn_paramSpec(configfilename, V_C=-1.0, V_L=-1.0, alpha_C=-1.0, alpha_L=-1.0, plot=True):
     """
 
     :param configfilename:
@@ -135,7 +135,7 @@ def delightLearn_paramSpec(configfilename, V_C=-1.0, V_L=-1.0, alpha_C=-1.0, alp
         
         # Plot MargLike avec fonction incluse
         quot = (lastLine - firstLine)//3
-        if loc % quot == 0:
+        if loc % quot == 0 and plot:
             values = np.logspace(-1, 6, 50)
             allMargLike = []
             figMargLike, axMargLike = plt.subplots(1, 1, figsize=(8, 6), constrained_layout=True)
