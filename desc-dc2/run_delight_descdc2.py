@@ -65,7 +65,8 @@ print(list_of_configfiles)
 
 from delight.interfaces.rail.processFilters import processFilters
 
-configfilename = list_of_configfiles[0]
+#configfilename = list_of_configfiles[0]
+configfilename = 'parametersTest.cfg'
 configfullfilename = os.path.join(workdir,configfilename) 
 processFilters(configfullfilename)
 
@@ -77,7 +78,8 @@ processFilters(configfullfilename)
 
 from delight.interfaces.rail.processSEDs import processSEDs
 
-configfilename = list_of_configfiles[0]
+#configfilename = list_of_configfiles[0]
+configfilename = 'parametersTest.cfg'
 configfullfilename = os.path.join(workdir,configfilename) 
 processSEDs(configfullfilename)
 
