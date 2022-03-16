@@ -38,33 +38,26 @@ from delight.photoz_gp import PhotozGP
 
 
 # # Initialisation
-
 workdir = "tmp"
 
 
 # # Configuration parameters
 # 
 # - now parameters are generated in a dictionnary
-
-
-
 list_of_files = os.listdir(workdir)
 list_of_files.remove('data') 
 list_of_files.remove('delight_data') 
 if '.ipynb_checkpoints' in list_of_files:
     list_of_files.remove('.ipynb_checkpoints')
 list_of_configfiles = sorted(list_of_files)
-
 print(list_of_configfiles)
 
 
 # # Filters
-
 # - First, we must **fit the band filters with a gaussian mixture**. 
 # This is done with this script:
 
 from delight.interfaces.rail.processFilters import processFilters
-
 #configfilename = list_of_configfiles[0]
 configfilename = 'parametersTest.cfg'
 configfullfilename = os.path.join(workdir,configfilename) 
@@ -72,12 +65,9 @@ processFilters(configfullfilename)
 
 
 # # SED
-
 # - Second, we will process the library of SEDs and project them onto the filters,
 # (for the mean fct of the GP) with the following script (which may take a few minutes depending on the settings you set):
-
 from delight.interfaces.rail.processSEDs import processSEDs
-
 #configfilename = list_of_configfiles[0]
 configfilename = 'parametersTest.cfg'
 configfullfilename = os.path.join(workdir,configfilename) 
@@ -87,27 +77,28 @@ processSEDs(configfullfilename)
 # # Train and apply
 # Run the scripts below. There should be a little bit of feedback as it is going through the lines.
 # For up to 1e4 objects it should only take a few minutes max, depending on the settings above.
-
 # ## Template Fitting
-
 from delight.interfaces.rail.templateFitting import templateFitting
-
 templateFitting(configfullfilename)
 
 
 # ## Gaussian Process
-
-# ### Trainning
-
+# ### Training
 from delight.interfaces.rail.delightLearn import delightLearn
-
 delightLearn(configfullfilename)
 
 
 # ## Predictions
-
 from delight.interfaces.rail.delightApply import delightApply
-
 delightApply(configfullfilename)
 
 
+
+### Fonction for external use             ###
+### May be improved for sensitivity runs? ###
+def run_full_delight_confFile(configFullFilename):
+    processFilters(configFullFilename)
+    processSEDs(configFullFilename)
+    templateFitting(configFullFilename)
+    delightLearn(configFullFilename)
+    delightApply(configFullFilename)
