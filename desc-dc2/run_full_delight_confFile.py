@@ -31,7 +31,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import scipy.stats
 import sys,os
-#sys.path.append('../')
+sys.path.append('../')
 from delight.io import *
 from delight.utils import *
 from delight.photoz_gp import PhotozGP
