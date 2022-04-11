@@ -27,14 +27,14 @@
 # This is an example for filling in/predicting missing bands in a fully bayesian way
 # with a flexible SED model quickly via our photo-z GP.
 
-import numpy as np
-import matplotlib.pyplot as plt
-import scipy.stats
+#import numpy as np
+#import matplotlib.pyplot as plt
+#import scipy.stats
 import sys,os
 sys.path.append('../')
-from delight.io import *
-from delight.utils import *
-from delight.photoz_gp import PhotozGP
+#from delight.io import *
+#from delight.utils import *
+#from delight.photoz_gp import PhotozGP
 
 from delight.interfaces.rail.processSEDs import processSEDs
 from delight.interfaces.rail.processFilters import processFilters
