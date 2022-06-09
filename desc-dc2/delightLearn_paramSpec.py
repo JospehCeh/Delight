@@ -14,6 +14,15 @@ from photoz_gp import PhotozGP
 from delight.photoz_kernels import Photoz_mean_function, Photoz_kernel
 import matplotlib.pyplot as plt
 
+from scipy.interpolate import interp1d
+import scipy.special as sc
+# everything in iminuit is done through the Minuit object, so we import it
+from iminuit import cost, Minuit
+# we also need a cost function to fit and import the LeastSquares function
+from iminuit.cost import LeastSquares
+# display iminuit version
+import iminuit
+
 import coloredlogs
 import logging
 
@@ -21,14 +30,41 @@ import logging
 logger = logging.getLogger(__name__)
 coloredlogs.install(level='DEBUG', logger=logger,fmt='%(asctime)s,%(msecs)03d %(programname)s, %(name)s[%(process)d] %(levelname)s %(message)s')
 
-def delightLearn_paramSpec(configfilename, V_C=-1.0, V_L=-1.0, alpha_C=-1.0, alpha_L=-1.0, plot=True):
+def gammaincc_ext(k, x):
+    """
+
+    gammaincc_ext(k, x)
+    
+    Compute the regularized upper incomplete gamma function as defined in scipy.special.
+    If k>=0, returns scipy.special.gammaincc(k, x)
+    
+    Else, uses the recursive formula in order to extend the definition of the function to negative k.
+    """
+    
+    if k>=0.:
+        y = sc.gammaincc(k, x)
+    else: #recursive call
+        y = ( 1/(k*sc.gamma(k)) ) * ( gammaincc_ext(k+1., x)*sc.gamma(k+1.) - np.float_power(x, k)*np.exp(-x) )
+    return y
+
+def computeBias(k=1.0, xmin=1.0e0):
+    """
+    
+    gammaincc_ext(k, x)
+    
+    Compute the bias of the Luminosity function that leads to a gamma distribution, when the lower bound is a luminosity threshold > 0.
+    Available for negative k, however this leads to a negative bias which is not usable in practical cases.
+    For usable cases, k must be strictly positive, which is inconsistent with the measurements of the local group that lead to k = -0.25.
+    """
+    
+    return gammaincc_ext(k+1.0, xmin) / gammaincc_ext(k, xmin)
+
+def delightLearn_paramSpec(configfilename, V_C=-1.0, V_L=-1.0, alpha_C=-1.0, alpha_L=-1.0, plot=False, autofitTemplates=False):
     """
 
     :param configfilename:
     :return:
     """
-
-
     
     threadNum = 0
     numThreads = 1
@@ -44,21 +80,120 @@ def delightLearn_paramSpec(configfilename, V_C=-1.0, V_L=-1.0, alpha_C=-1.0, alp
     bandCoefAmplitudes, bandCoefPositions, bandCoefWidths, norms = readBandCoefficients(params)
     numBands = bandCoefAmplitudes.shape[0]
 
-    redshiftDistGrid, redshiftGrid, redshiftGridGP = createGrids(params)
-
-    f_mod = readSEDs(params)
-
     numObjectsTraining = np.sum(1 for line in open(params['training_catFile']))
 
     msg= 'Number of Training Objects ' + str(numObjectsTraining)
     logger.info(msg)
 
-
     firstLine = int(threadNum * numObjectsTraining / numThreads)
     lastLine = int(min(numObjectsTraining,(threadNum + 1) * numObjectsTraining / numThreads))
     numLines = lastLine - firstLine
+    
+    crossValidate = params['training_crossValidate']
+    
+    redshiftDistGrid, redshiftGrid, redshiftGridGP = createGrids(params)
+    
+    if not autofitTemplates:
+        f_mod = readSEDs(params)
+    else:
+        ######################################################
+        ## Begin fit a photodetection bias on training data ##
+        ######################################################
+        
+        x_data, __normedRefFlux,\
+            __bands, y_dataArr, yerr_dataArr,\
+            __bandsCV, __fluxesCV, __fluxesVarCV = getDataFromFile(params, firstLine, lastLine, prefix="training_",\
+                                                                   getXY=False, CV=False)
 
-  
+        f_mod = np.zeros((len(params['templates_names']),
+                          len(params['bandNames'])), dtype=object)
+
+        for jf in range(len(params['bandNames'])):
+            y_data = -2.5*np.log10(y_dataArr[jf])
+            yerr_data = np.abs(-2.5*np.log10(1+yerr_dataArr[jf]/y_dataArr[jf]))
+            Z_IDX = [ np.where(np.logical_and(x_data >= redshiftGrid[i], x_data < redshiftGrid[i+1]))[0]\
+                     for i in range(len(redshiftGrid)-1)]
+            y_av = [ np.mean(y_data[indexes]) for indexes in Z_IDX ]
+            y_std = [ np.std(y_data[indexes]) for indexes in Z_IDX ]
+
+            meanInterp = InterpolatedUnivariateSpline(redshiftGrid[:-1] + 0.5*np.diff(redshiftGrid), y_av)
+            stdInterp = InterpolatedUnivariateSpline(redshiftGrid[:-1] + 0.5*np.diff(redshiftGrid), y_std)
+
+            array_k = np.empty(len(redshiftGrid))
+            array_xmin = np.empty(len(redshiftGrid)-1)
+
+            def averageMag(x_array, B=1.0):#, k=1.0, xmin=1.0):
+                magAvg = np.zeros_like(x_array)
+                for it, sed_name in enumerate(params['templates_names']):
+                    data = np.loadtxt(params['templates_directory'] +
+                                      '/' + sed_name + '_fluxredshiftmod.txt')[:, jf]
+
+                    magAvg += -2.5*np.log10(B * data)
+                return magAvg/nt # np array shaped as redshift and magnitude columns
+
+            lsq_avg = cost.LeastSquares(redshiftGrid, meanInterp(redshiftGrid), stdInterp(redshiftGrid),\
+                                        averageMag, loss='soft_l1')
+
+            m0 = Minuit(lsq_avg, B=array_B[jf])#, k=1.0, xmin=xmin)
+            m0.errordef = Minuit.LEAST_SQUARES
+            m0.limits['B']=(0.01,np.inf)
+            m0.migrad()
+            #m0.hesse()
+
+            for z_ind in range(len(redshiftGrid)-1):
+                    def averageMag(x_array, k=1.0, xmin=1.0):
+                        magAvg = np.zeros_like(x_array)
+                        for it, sed_name in enumerate(params['templates_names']):
+                            data = np.loadtxt(params['templates_directory'] +
+                                              '/' + sed_name + '_fluxredshiftmod.txt')[:, jf]
+
+                            magAvg += -2.5*np.log10(m0.values['B'] * data * computeBias(k, xmin))
+                        return magAvg/nt # np array shaped as redshift and magnitude columns
+
+                    lsq_avg = cost.LeastSquares(x_data[Z_IDX[z_ind]], meanInterp(x_data[Z_IDX[z_ind]]),\
+                                                stdInterp(x_data[Z_IDX[z_ind]]), averageMag, loss='soft_l1')
+
+                    xmin=200.0*np.min(np.power(10, -0.4*y_data[Z_IDX[z_ind]]))/np.mean(np.power(10, -0.4*y_data[Z_IDX[z_ind]]))
+
+                    m1 = Minuit(lsq_avg, k=0.1, xmin=xmin)
+                    m1.errordef = Minuit.LEAST_SQUARES
+                    m1.migrad()
+                    #m1.hesse()
+                    array_k[z_ind+1] = m1.values['k']
+                    array_xmin[z_ind] = m1.values['xmin']
+            array_k[0] = array_k[1] ## artifice pour gérer la dimensionnalité des k.
+                                    ## Peut-être qu'il vaut carrément mieux ne conserver qu'une valeur... mais laquelle?
+                
+            def averageMag(x_array, B=1.0, xmin=1.0):#, k=1.0):
+                magAvg = np.zeros_like(x_array)
+                for it, sed_name in enumerate(params['templates_names']):
+                    data = np.loadtxt(params['templates_directory'] +
+                                      '/' + sed_name + '_fluxredshiftmod.txt')[:, jf]
+
+                    magAvg += -2.5*np.log10(B * data * computeBias(array_k[:], xmin))
+                return magAvg/nt # np array shaped as redshift and magnitude columns
+
+            lsq_avg = cost.LeastSquares(redshiftGrid, meanInterp(redshiftGrid), stdInterp(redshiftGrid),\
+                                        averageMag, loss='soft_l1')
+
+            m2 = Minuit(lsq_avg, B=m0.values['B'], xmin=np.max(array_xmin[:]))#, k=1.0, xmin=xmin)
+            m2.errordef = Minuit.LEAST_SQUARES
+            m2.limits['B']=(0.01,np.inf)
+            m2.migrad()
+            #m2.hesse()
+
+            for it, sed_name in enumerate(params['templates_names']):
+                data = np.loadtxt(params['templates_directory'] +
+                                  '/' + sed_name + '_fluxredshiftmod.txt')[:, jf]
+                f_mod[it, jf] = interp1d(redshiftGrid, m2.values['B']*data*computeBias(array_k[:], m2.values['xmin']),\
+                                         kind='linear', bounds_error=False, fill_value='extrapolate')
+
+        ############################################################################################################
+        ## End of photodetection bias fitting process.                                                            ##
+        ## Normally, the f_mod function now matches the distorted flux-redshift SEDs instead of the original one. ## 
+        ## This is what goes then into the GP.                                                                    ##
+        ############################################################################################################
+    
     msg ='Thread ' +  str(threadNum) + ' , analyzes lines ' + str(firstLine) + ' , to ' + str(lastLine)
     logger.info(msg)
 
@@ -76,11 +211,11 @@ def delightLearn_paramSpec(configfilename, V_C=-1.0, V_L=-1.0, alpha_C=-1.0, alp
         
     print("Creation of GP with V_C = {}, V_L = {}, alpha_C = {}, alpha_L = {}.".format(V_C, V_L, alpha_C, alpha_L))
     
-    gp = PhotozGP(f_mod, bandCoefAmplitudes, bandCoefPositions, bandCoefWidths,
-              params['lines_pos'], params['lines_width'],
-              V_C, V_L,
-              alpha_C, alpha_L,
-              redshiftGridGP, use_interpolators=True)
+    gp = PhotozGP(f_mod, bandCoefAmplitudes, bandCoefPositions, bandCoefWidths,\
+                  params['lines_pos'], params['lines_width'],\
+                  V_C, V_L,\
+                  alpha_C, alpha_L,\
+                  redshiftGridGP, use_interpolators=True)
 
     B = numBands
     numCol = 3 + B + B*(B+1)//2 + B + f_mod.shape[0]
@@ -88,10 +223,9 @@ def delightLearn_paramSpec(configfilename, V_C=-1.0, V_L=-1.0, alpha_C=-1.0, alp
     fmt = '%i ' + '%.12e ' * (localData.shape[1] - 1)
 
     loc = - 1
-    crossValidate = params['training_crossValidate']
     trainingDataIter1 = getDataFromFile(params, firstLine, lastLine,prefix="training_", getXY=True,CV=crossValidate)
 
-
+    
     if crossValidate:
         chi2sLocal = None
         bandIndicesCV, bandNamesCV, bandColumnsCV,bandVarColumnsCV, redshiftColumnCV = readColumnPositions(params, prefix="training_CV_", refFlux=False)
