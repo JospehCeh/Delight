@@ -50,7 +50,7 @@ def run_full_delight_confFile(configFullFilename):
     processSEDs(configFullFilename)
     templateFitting(configFullFilename)
     #delightLearn(configFullFilename)
-    delightLearn_paramSpec(configFullFilename, autofitTemplates=True)
+    delightLearn_paramSpec(configFullFilename, autofitTemplates=False, uniformFmod=True)
     delightApply(configFullFilename)
 
 
