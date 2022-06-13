@@ -39,7 +39,8 @@ sys.path.append('../')
 from delight.interfaces.rail.processSEDs import processSEDs
 from delight.interfaces.rail.processFilters import processFilters
 from delight.interfaces.rail.templateFitting import templateFitting
-from delight.interfaces.rail.delightLearn import delightLearn
+#from delight.interfaces.rail.delightLearn import delightLearn
+from delightLearn_paramSpec import delightLearn_paramSpec
 from delight.interfaces.rail.delightApply import delightApply
 
 ### Fonction for external use             ###
@@ -48,7 +49,8 @@ def run_full_delight_confFile(configFullFilename):
     processFilters(configFullFilename)
     processSEDs(configFullFilename)
     templateFitting(configFullFilename)
-    delightLearn(configFullFilename)
+    #delightLearn(configFullFilename)
+    delightLearn_paramSpec(configFullFilename, autofitTemplates=True)
     delightApply(configFullFilename)
 
 

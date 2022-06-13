@@ -14,7 +14,7 @@ from photoz_gp import PhotozGP
 from delight.photoz_kernels import Photoz_mean_function, Photoz_kernel
 import matplotlib.pyplot as plt
 
-from scipy.interpolate import interp1d
+from scipy.interpolate import InterpolatedUnivariateSpline, interp1d
 import scipy.special as sc
 # everything in iminuit is done through the Minuit object, so we import it
 from iminuit import cost, Minuit
@@ -57,9 +57,10 @@ def computeBias(k=1.0, xmin=1.0e0):
     For usable cases, k must be strictly positive, which is inconsistent with the measurements of the local group that lead to k = -0.25.
     """
     
-    return gammaincc_ext(k+1.0, xmin) / gammaincc_ext(k, xmin)
+    #return gammaincc_ext(k+1.0, xmin) / gammaincc_ext(k, xmin)
+    return sc.gammaincc(k+1.0, xmin) / sc.gammaincc(k, xmin)
 
-def delightLearn_paramSpec(configfilename, V_C=-1.0, V_L=-1.0, alpha_C=-1.0, alpha_L=-1.0, plot=False, autofitTemplates=False):
+def delightLearn_paramSpec(configfilename, V_C=-1.0, V_L=-1.0, alpha_C=-1.0, alpha_L=-1.0, plot=False, autofitTemplates=False, uniformFmod=False):
     """
 
     :param configfilename:
@@ -95,99 +96,134 @@ def delightLearn_paramSpec(configfilename, V_C=-1.0, V_L=-1.0, alpha_C=-1.0, alp
     
     if not autofitTemplates:
         f_mod = readSEDs(params)
+        if uniformFmod:
+            uniform = np.mean(f_mod)
+            f_mod[:,:] = uniform
     else:
         ######################################################
         ## Begin fit a photodetection bias on training data ##
         ######################################################
         
-        x_data, __normedRefFlux,\
-            __bands, y_dataArr, yerr_dataArr,\
-            __bandsCV, __fluxesCV, __fluxesVarCV = getDataFromFile(params, firstLine, lastLine, prefix="training_",\
-                                                                   getXY=False, CV=False)
+        #x_data, DUM_normedRefFlux, DUM_bands, y_dataArr, yerr_dataArr, DUM_bandsCV, DUM_fluxesCV, DUM_fluxesVarCV, DUMX, DUMY, DUMYVAR =\
+        #getDataFromFile(params, firstLine, lastLine, prefix="training_", getXY=False, CV=False)
+        
+        #x_data, DUM_normedRefFlux, DUM_bands, y_dataArr, yerr_dataArr = getDataFromFile(params, firstLine, lastLine, prefix="training_", getXY=False, CV=False)
+        
+        trainingDataIterFit = getDataFromFile(params, firstLine, lastLine, prefix="training_", getXY=False, CV=False)
+        x_data = np.empty(numObjectsTraining)
+        y_dataArr = np.empty((numObjectsTraining, numBands))
+        yerr_dataArr = np.empty((numObjectsTraining, numBands))
+        loc=-1
+        for z, _DUM_normedRefFlux, _DUM_bands, flux, fluxerr, *_DUMOTHER_ in trainingDataIterFit:
+            loc+=1
+            x_data[loc] = z
+            y_dataArr[loc, :] = flux
+            yerr_dataArr[loc, :] = fluxerr
+            
+        print("DEBUG: ", loc, x_data[-1], y_dataArr[-1, :])
 
         f_mod = np.zeros((len(params['templates_names']),
                           len(params['bandNames'])), dtype=object)
+        
+        Z_GRID = np.linspace(redshiftGrid[0], redshiftGrid[-1], 10)
 
         for jf in range(len(params['bandNames'])):
-            y_data = -2.5*np.log10(y_dataArr[jf])
-            yerr_data = np.abs(-2.5*np.log10(1+yerr_dataArr[jf]/y_dataArr[jf]))
-            Z_IDX = [ np.where(np.logical_and(x_data >= redshiftGrid[i], x_data < redshiftGrid[i+1]))[0]\
-                     for i in range(len(redshiftGrid)-1)]
+            y_data = -2.5*np.log10(y_dataArr[:, jf])
+            yerr_data = np.abs(-2.5*np.log10(1+yerr_dataArr[:, jf]/y_dataArr[:, jf]))
+            Z_IDX = [ np.where(np.logical_and(x_data >= Z_GRID[i], x_data < Z_GRID[i+1]))[0]\
+                     for i in range(len(Z_GRID)-1)]
             y_av = [ np.mean(y_data[indexes]) for indexes in Z_IDX ]
             y_std = [ np.std(y_data[indexes]) for indexes in Z_IDX ]
 
-            meanInterp = InterpolatedUnivariateSpline(redshiftGrid[:-1] + 0.5*np.diff(redshiftGrid), y_av)
-            stdInterp = InterpolatedUnivariateSpline(redshiftGrid[:-1] + 0.5*np.diff(redshiftGrid), y_std)
+            meanInterp = interp1d(Z_GRID[:-1] + 0.5*np.diff(Z_GRID), y_av, bounds_error = False, fill_value=(y_av[0], y_av[-1]))
+            stdInterp = interp1d(Z_GRID[:-1] + 0.5*np.diff(Z_GRID), y_std, bounds_error = False, fill_value=(y_std[0], y_std[-1]))
 
-            array_k = np.empty(len(redshiftGrid))
-            array_xmin = np.empty(len(redshiftGrid)-1)
+            array_k = np.empty(len(Z_GRID)-1)
+            array_xmin = np.empty(len(Z_GRID)-1)
 
             def averageMag(x_array, B=1.0):#, k=1.0, xmin=1.0):
                 magAvg = np.zeros_like(x_array)
                 for it, sed_name in enumerate(params['templates_names']):
                     data = np.loadtxt(params['templates_directory'] +
                                       '/' + sed_name + '_fluxredshiftmod.txt')[:, jf]
+                    data_interp = interp1d(redshiftGrid, data, bounds_error = False, fill_value=(data[0], data[-1]))
+                    magAvg += -2.5*np.log10(B * data_interp(x_array))
+                return magAvg/len(params['templates_names']) # np array shaped as redshift and magnitude columns
 
-                    magAvg += -2.5*np.log10(B * data)
-                return magAvg/nt # np array shaped as redshift and magnitude columns
-
-            lsq_avg = cost.LeastSquares(redshiftGrid, meanInterp(redshiftGrid), stdInterp(redshiftGrid),\
+            lsq_avg = cost.LeastSquares(Z_GRID, meanInterp(Z_GRID), stdInterp(Z_GRID),\
                                         averageMag, loss='soft_l1')
 
-            m0 = Minuit(lsq_avg, B=array_B[jf])#, k=1.0, xmin=xmin)
+            m0 = Minuit(lsq_avg, B=1.0)#, k=1.0, xmin=xmin)
             m0.errordef = Minuit.LEAST_SQUARES
             m0.limits['B']=(0.01,np.inf)
             m0.migrad()
             #m0.hesse()
 
-            for z_ind in range(len(redshiftGrid)-1):
+            for z_ind in range(len(Z_GRID)-1):
                     def averageMag(x_array, k=1.0, xmin=1.0):
                         magAvg = np.zeros_like(x_array)
                         for it, sed_name in enumerate(params['templates_names']):
                             data = np.loadtxt(params['templates_directory'] +
                                               '/' + sed_name + '_fluxredshiftmod.txt')[:, jf]
-
-                            magAvg += -2.5*np.log10(m0.values['B'] * data * computeBias(k, xmin))
-                        return magAvg/nt # np array shaped as redshift and magnitude columns
+                            data_interp = interp1d(redshiftGrid, data, bounds_error = False, fill_value=(data[0], data[-1]))
+                            magAvg += -2.5*np.log10(m0.values['B'] * data_interp(x_array) * computeBias(k, xmin))
+                        return magAvg/len(params['templates_names']) # np array shaped as redshift and magnitude columns
 
                     lsq_avg = cost.LeastSquares(x_data[Z_IDX[z_ind]], meanInterp(x_data[Z_IDX[z_ind]]),\
                                                 stdInterp(x_data[Z_IDX[z_ind]]), averageMag, loss='soft_l1')
 
                     xmin=200.0*np.min(np.power(10, -0.4*y_data[Z_IDX[z_ind]]))/np.mean(np.power(10, -0.4*y_data[Z_IDX[z_ind]]))
 
-                    m1 = Minuit(lsq_avg, k=0.1, xmin=xmin)
+                    m1 = Minuit(lsq_avg, k=1.0, xmin=xmin)
                     m1.errordef = Minuit.LEAST_SQUARES
+                    m1.limits['k']=(0.001,np.inf)
+                    m1.limits['xmin']=(0.0,np.inf)
                     m1.migrad()
                     #m1.hesse()
-                    array_k[z_ind+1] = m1.values['k']
+                    array_k[z_ind] = m1.values['k']
                     array_xmin[z_ind] = m1.values['xmin']
-            array_k[0] = array_k[1] ## artifice pour gérer la dimensionnalité des k.
+            
+            k_interp = interp1d(Z_GRID[:-1] + 0.5*np.diff(Z_GRID), array_k, bounds_error = False, fill_value=(array_k[0], array_k[-1])) 
+            
+            #array_k[0] = array_k[1] ## artifice pour gérer la dimensionnalité des k.
                                     ## Peut-être qu'il vaut carrément mieux ne conserver qu'une valeur... mais laquelle?
+            
                 
             def averageMag(x_array, B=1.0, xmin=1.0):#, k=1.0):
                 magAvg = np.zeros_like(x_array)
                 for it, sed_name in enumerate(params['templates_names']):
                     data = np.loadtxt(params['templates_directory'] +
                                       '/' + sed_name + '_fluxredshiftmod.txt')[:, jf]
+                    data_interp = interp1d(redshiftGrid, data, bounds_error = False, fill_value=(data[0], data[-1]))
+                    magAvg += -2.5*np.log10(B * data_interp(x_array) * computeBias(k_interp(x_array), xmin))
+                return magAvg/len(params['templates_names']) # np array shaped as redshift and magnitude columns
 
-                    magAvg += -2.5*np.log10(B * data * computeBias(array_k[:], xmin))
-                return magAvg/nt # np array shaped as redshift and magnitude columns
-
-            lsq_avg = cost.LeastSquares(redshiftGrid, meanInterp(redshiftGrid), stdInterp(redshiftGrid),\
+            lsq_avg = cost.LeastSquares(Z_GRID, meanInterp(Z_GRID), stdInterp(Z_GRID),\
                                         averageMag, loss='soft_l1')
 
             m2 = Minuit(lsq_avg, B=m0.values['B'], xmin=np.max(array_xmin[:]))#, k=1.0, xmin=xmin)
             m2.errordef = Minuit.LEAST_SQUARES
             m2.limits['B']=(0.01,np.inf)
+            m2.limits['xmin']=(0.0,np.inf)
             m2.migrad()
             #m2.hesse()
 
+            print("DEBUG : B={}, xmin={}, ks={}".format(m2.values['B'], m2.values['xmin'], array_k))
+            figDebug, axDebug = plt.subplots(2, 1, figsize=(8, 6), constrained_layout=True)
+            axDebug = axDebug.ravel()
+            axDebug[0].scatter(x_data, y_dataArr[:, jf], alpha=0.05)
+            axDebug[1].plot(redshiftGrid, k_interp(redshiftGrid))
+            axDebug[1].scatter(Z_GRID[:-1] + 0.5*np.diff(Z_GRID), array_k)
             for it, sed_name in enumerate(params['templates_names']):
                 data = np.loadtxt(params['templates_directory'] +
                                   '/' + sed_name + '_fluxredshiftmod.txt')[:, jf]
-                f_mod[it, jf] = interp1d(redshiftGrid, m2.values['B']*data*computeBias(array_k[:], m2.values['xmin']),\
+                #f_mod[it, jf] = interp1d(redshiftGrid, m2.values['B']*data*computeBias(k_interp(redshiftGrid), m2.values['xmin']),\
+                #                         kind='linear', bounds_error=False, fill_value='extrapolate')
+                f_mod[it, jf] = interp1d(redshiftGrid, data*computeBias(k_interp(redshiftGrid), m2.values['xmin']),\
                                          kind='linear', bounds_error=False, fill_value='extrapolate')
-
+                axDebug[0].plot(redshiftGrid, data, ls=":")
+                axDebug[0].plot(redshiftGrid, f_mod[it, jf](redshiftGrid))
+            axDebug[0].set_yscale('log')
         ############################################################################################################
         ## End of photodetection bias fitting process.                                                            ##
         ## Normally, the f_mod function now matches the distorted flux-redshift SEDs instead of the original one. ## 
