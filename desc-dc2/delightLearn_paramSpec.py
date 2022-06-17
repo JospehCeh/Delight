@@ -97,8 +97,8 @@ def delightLearn_paramSpec(configfilename, V_C=-1.0, V_L=-1.0, alpha_C=-1.0, alp
     if not autofitTemplates:
         f_mod = readSEDs(params)
         if uniformFmod:
-            uniform = np.mean(f_mod)
-            f_mod[:,:] = uniform
+            uniform = np.mean(f_mod[0,0](redshiftGrid))
+            f_mod[:,:] = interp1d(redshiftGrid, np.full_like(redshiftGrid, uniform), kind='linear', bounds_error=False, fill_value='extrapolate')
     else:
         ######################################################
         ## Begin fit a photodetection bias on training data ##
